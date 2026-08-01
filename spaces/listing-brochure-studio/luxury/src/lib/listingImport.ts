@@ -137,7 +137,7 @@ function withJasonBrand(listing: Listing, sourceUrl: string): Listing {
   }
 }
 
-function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, source: ListingSource): Listing {
+function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _source: ListingSource): Listing {
   const photos = [
     ...asList(data.photos),
     ...asList(data.image_urls),
