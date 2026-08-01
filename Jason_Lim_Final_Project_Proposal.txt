@@ -1,0 +1,14 @@
+Subject: Final Project Proposal — AI Luxury Listing Brochure Studio
+
+Hi,
+
+For my final project I will build an AI-powered luxury listing brochure generator for Silicon Valley real estate, deployed as a Hugging Face Space and aligned with my Compass practice site (jasonlimrealty.com).
+
+The app takes a Compass, Zillow, or Redfin listing URL (or manual photos and facts), then uses LLMs and structured prompts to generate editorial brochure copy: headlines, property narrative, lifestyle pull quotes, and feature descriptions. The output is a multi-section, magazine-style interactive brochure with print/PDF export—not a generic flyer. Core LLM work includes prompt design for tone (luxury Compass/Sotheby’s style), optional copy polishing via Hugging Face Inference, and a future AI estimate/narrative module with confidence-style language for sellers.
+
+I will demonstrate a working MVP: URL/manual intake → AI-assisted copy → branded brochure UI → Print/PDF. This showcases practical LLM application, Hugging Face deployment, and product thinking for a real-world real estate use case.
+
+Thank you,
+Jason Lim
+DRE #02444964
+jason.lim@compass.com
