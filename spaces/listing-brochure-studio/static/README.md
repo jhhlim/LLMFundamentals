@@ -6,14 +6,13 @@ colorTo: yellow
 sdk: static
 pinned: false
 license: apache-2.0
-short_description: Editorial luxury Compass listing brochure
+short_description: Import Compass/Zillow/Redfin URL → luxury brochure
 ---
 
 # Jason Lim · Luxury Listing Brochure
 
-Premium multi-page editorial brochure for Silicon Valley listings.
+Paste a Compass, Zillow, or Redfin listing URL (+ RapidAPI key) to generate an editorial brochure.
 
-- Interactive scroll experience
-- Print / PDF (Letter) via browser print
-- Compass branding · DRE #02444964
+- Interactive magazine layout
+- Print / PDF
 - www.jasonlimrealty.com
