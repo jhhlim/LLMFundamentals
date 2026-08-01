@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Cormorant Garamond", Georgia, "Times New Roman", serif;
+
+  --color-ink: #0b1f33;
+  --color-ink-soft: #12304a;
+  --color-compass: #111111;
+  --color-stone: #8a8478;
+  --color-stone-light: #c9c2b6;
+  --color-warm: #f7f3ec;
+  --color-warm-deep: #ebe4d8;
+  --color-gold: #b08d57;
+  --color-gold-soft: #d4bc8e;
+  --color-paper: #fcfaf6;
+  --color-accent: #1f6f78;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-paper text-ink font-sans antialiased;
+    margin: 0;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--color-gold) 35%, white);
+  }
+}
+
+@layer components {
+  .brochure-page {
+    @apply relative w-full overflow-hidden;
+    min-height: 100vh;
+  }
+
+  .editorial-display {
+    @apply font-serif font-medium tracking-[-0.02em] leading-[1.05];
+  }
+
+  .eyebrow {
+    @apply text-[11px] uppercase tracking-[0.28em] font-semibold text-stone;
+  }
+
+  .soft-card {
+    @apply rounded-2xl bg-white/80 border border-stone-light/40 shadow-[0_18px_50px_-28px_rgba(11,31,51,0.45)];
+  }
+
+  .gold-rule {
+    @apply h-px w-16 bg-gradient-to-r from-gold to-transparent;
+  }
+}
+
+/* Print / PDF */
+@page {
+  size: Letter;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    background: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .brochure-page {
+    min-height: 0;
+    height: 11in;
+    width: 8.5in;
+    page-break-after: always;
+    break-after: page;
+    overflow: hidden;
+  }
+
+  .brochure-page:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+
+  .print-scale {
+    transform: none !important;
+  }
+}
