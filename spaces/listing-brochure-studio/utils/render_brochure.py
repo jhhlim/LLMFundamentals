@@ -14,7 +14,7 @@ from reportlab.lib.units import inch
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
-from .listing import BRAND_ACCENT, BRAND_DRE, BRAND_INK, BRAND_SOFT, Listing
+from .listing import BRAND_ACCENT, BRAND_DRE, BRAND_INK, BRAND_SITE, BRAND_SOFT, Listing
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
 HEADSHOT = ASSETS / "jason-lim-headshot.jpg"
@@ -67,11 +67,33 @@ def collect_images(
     return images
 
 
+def _cover_crop(img: PILImage.Image, target_w: float, target_h: float) -> PILImage.Image:
+    """Center-crop image to target aspect ratio, then size for sharp PDF draw."""
+    tw, th = max(target_w, 1), max(target_h, 1)
+    target_ratio = tw / th
+    iw, ih = img.size
+    src_ratio = iw / ih if ih else 1
+    if src_ratio > target_ratio:
+        new_w = int(ih * target_ratio)
+        left = max((iw - new_w) // 2, 0)
+        box = (left, 0, left + new_w, ih)
+    else:
+        new_h = int(iw / target_ratio) if target_ratio else ih
+        top = max((ih - new_h) // 2, 0)
+        box = (0, top, iw, top + new_h)
+    cropped = img.crop(box)
+    # Upscale pixels roughly to print density (~150 dpi)
+    out_w = max(int(tw * 150 / 72), 1)
+    out_h = max(int(th * 150 / 72), 1)
+    return cropped.resize((out_w, out_h), PILImage.Resampling.LANCZOS)
+
+
 def _draw_cover_photo(c: canvas.Canvas, img: PILImage.Image, x, y, w, h):
+    fitted = _cover_crop(img, w, h)
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=90)
+    fitted.save(buf, format="JPEG", quality=92)
     buf.seek(0)
-    c.drawImage(ImageReader(buf), x, y, width=w, height=h, preserveAspectRatio=True, anchor="c", mask="auto")
+    c.drawImage(ImageReader(buf), x, y, width=w, height=h, preserveAspectRatio=False, mask="auto")
 
 
 def render_pdf(
@@ -79,7 +101,7 @@ def render_pdf(
     images: list[PILImage.Image],
     template_name: str = "Modern",
 ) -> str:
-    """Render a one-page letter PDF and return the temp file path."""
+    """Render a full-bleed one-page letter PDF and return the temp file path."""
     fd, path = tempfile.mkstemp(suffix=".pdf", prefix="brochure_")
     os.close(fd)
 
@@ -90,111 +112,118 @@ def render_pdf(
     muted = HexColor("#5A6570")
     soft = _hex(BRAND_SOFT, "#E8F2F3")
 
-    # Atmosphere band
+    # Full-page soft ground
     c.setFillColor(soft)
     c.rect(0, 0, width, height, fill=1, stroke=0)
+
+    # Full-bleed header
+    header_h = 0.95 * inch
     c.setFillColor(ink)
-    c.rect(0, height - 1.15 * inch, width, 1.15 * inch, fill=1, stroke=0)
+    c.rect(0, height - header_h, width, header_h, fill=1, stroke=0)
     c.setFillColor(accent)
-    c.rect(0, height - 1.15 * inch, width, 0.08 * inch, fill=1, stroke=0)
+    c.rect(0, height - header_h, width, 0.07 * inch, fill=1, stroke=0)
 
-    # Brand + price
     c.setFillColor(white)
-    c.setFont("Helvetica-Bold", 11)
+    c.setFont("Helvetica-Bold", 10)
     brand_line = f"{listing.agent_name or 'Jason Lim'}  ·  {listing.brokerage or 'Compass'}"
-    c.drawString(0.6 * inch, height - 0.42 * inch, brand_line.upper())
-    c.setFont("Helvetica", 8.5)
-    c.drawString(0.6 * inch, height - 0.58 * inch, listing.dre or BRAND_DRE)
-    c.setFont("Helvetica-Bold", 12)
-    c.drawRightString(width - 0.6 * inch, height - 0.48 * inch, listing.price or "")
+    c.drawString(0.45 * inch, height - 0.32 * inch, brand_line.upper())
+    c.setFont("Helvetica", 8)
+    c.drawString(0.45 * inch, height - 0.48 * inch, listing.dre or BRAND_DRE)
+    c.setFont("Helvetica-Bold", 13)
+    c.drawRightString(width - 0.45 * inch, height - 0.38 * inch, listing.price or "")
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(0.45 * inch, height - 0.78 * inch, (listing.headline or "Featured Listing")[:62])
 
-    c.setFont("Helvetica-Bold", 20)
-    headline = listing.headline or "Featured Listing"
-    c.drawString(0.6 * inch, height - 0.95 * inch, headline[:58])
-
-    # Hero image
-    hero_h = 3.35 * inch if template_name != "Luxury" else 3.7 * inch
-    hero_y = height - 1.35 * inch - hero_h
-    c.setFillColor(HexColor("#D9D4CB"))
-    c.rect(0.5 * inch, hero_y, width - 1.0 * inch, hero_h, fill=1, stroke=0)
+    # Full-bleed hero
+    hero_h = 3.55 * inch if template_name == "Luxury" else 3.25 * inch
+    hero_y = height - header_h - hero_h
+    c.setFillColor(HexColor("#C9D7DB"))
+    c.rect(0, hero_y, width, hero_h, fill=1, stroke=0)
     if images:
-        _draw_cover_photo(c, images[0], 0.5 * inch, hero_y, width - 1.0 * inch, hero_h)
-        c.setFillColor(accent)
-        c.rect(0.5 * inch, hero_y, 0.12 * inch, hero_h, fill=1, stroke=0)
+        _draw_cover_photo(c, images[0], 0, hero_y, width, hero_h)
+    c.setFillColor(accent)
+    c.rect(0, hero_y, 0.14 * inch, hero_h, fill=1, stroke=0)
 
-    # Address + facts
-    y = hero_y - 0.35 * inch
+    if template_name == "Open House":
+        c.setFillColor(HexColor("#C45C26"))
+        c.roundRect(width - 1.9 * inch, height - header_h + 0.18 * inch, 1.5 * inch, 0.32 * inch, 4, fill=1, stroke=0)
+        c.setFillColor(white)
+        c.setFont("Helvetica-Bold", 9)
+        c.drawCentredString(width - 1.15 * inch, height - header_h + 0.28 * inch, "OPEN HOUSE")
+
+    # Content band
+    pad = 0.45 * inch
+    y = hero_y - 0.32 * inch
     c.setFillColor(ink)
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(0.6 * inch, y, listing.full_address() or "Address available on request")
-    y -= 0.22 * inch
+    c.setFont("Helvetica-Bold", 13)
+    c.drawString(pad, y, listing.full_address() or "Address available on request")
+    y -= 0.2 * inch
     c.setFillColor(muted)
     c.setFont("Helvetica", 10)
-    c.drawString(0.6 * inch, y, listing.facts_line())
+    c.drawString(pad, y, listing.facts_line())
 
-    # Two-column body
-    left_x = 0.6 * inch
-    right_x = 4.35 * inch
-    col_width = 3.4 * inch
-    body_top = y - 0.35 * inch
-
+    # Two columns
+    body_top = y - 0.28 * inch
+    left_x = pad
+    right_x = width / 2 + 0.1 * inch
     c.setFillColor(ink)
     c.setFont("Helvetica-Bold", 11)
     c.drawString(left_x, body_top, "About this home")
-    text = c.beginText(left_x, body_top - 0.22 * inch)
+    c.drawString(right_x, body_top, "Highlights")
+
+    text = c.beginText(left_x, body_top - 0.2 * inch)
     text.setFont("Helvetica", 9.5)
     text.setFillColor(muted)
-    for line in _wrap(listing.description or "", 52)[:8]:
+    for line in _wrap(listing.description or "", 48)[:7]:
         text.textLine(line)
     c.drawText(text)
 
-    c.setFillColor(ink)
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(right_x, body_top, "Highlights")
-    bullet_y = body_top - 0.22 * inch
-    for bullet in (listing.bullets or [])[:5]:
+    bullet_y = body_top - 0.2 * inch
+    for bullet in (listing.bullets or [])[:4]:
         c.setFillColor(accent)
-        c.circle(right_x + 0.08 * inch, bullet_y + 0.04 * inch, 0.05 * inch, fill=1, stroke=0)
+        c.circle(right_x + 0.07 * inch, bullet_y + 0.03 * inch, 0.045 * inch, fill=1, stroke=0)
         c.setFillColor(muted)
         c.setFont("Helvetica", 9.5)
-        for i, line in enumerate(_wrap(bullet, 40)[:2]):
-            c.drawString(right_x + 0.22 * inch, bullet_y - i * 0.14 * inch, line)
-        bullet_y -= 0.34 * inch
+        for i, line in enumerate(_wrap(bullet, 42)[:2]):
+            c.drawString(right_x + 0.2 * inch, bullet_y - i * 0.13 * inch, line)
+        bullet_y -= 0.32 * inch
 
-    # Secondary photo strip
-    strip_y = 1.55 * inch
-    thumb_w = 2.35 * inch
-    thumb_h = 1.45 * inch
+    # Full-width thumbnail strip + full-bleed footer
+    footer_h = 0.88 * inch
+    gap = 0.08 * inch
+    thumb_h = 1.55 * inch
+    thumb_y = footer_h + 0.18 * inch
     extras = images[1:4]
+    n = max(len(extras), 1)
+    thumb_w = (width - gap * (n + 1)) / n
     if extras:
         for idx, img in enumerate(extras):
-            x = 0.55 * inch + idx * (thumb_w + 0.15 * inch)
-            c.setFillColor(HexColor("#D9D4CB"))
-            c.roundRect(x, strip_y, thumb_w, thumb_h, 6, fill=1, stroke=0)
-            _draw_cover_photo(c, img, x, strip_y, thumb_w, thumb_h)
+            x = gap + idx * (thumb_w + gap)
+            c.setFillColor(HexColor("#C9D7DB"))
+            c.rect(x, thumb_y, thumb_w, thumb_h, fill=1, stroke=0)
+            _draw_cover_photo(c, img, x, thumb_y, thumb_w, thumb_h)
+    else:
+        # Keep vertical rhythm even without extras
+        c.setFillColor(HexColor("#D7E4E7"))
+        c.rect(gap, thumb_y, width - 2 * gap, thumb_h, fill=1, stroke=0)
 
-    # Footer / CTA
+    # Full-bleed footer
     c.setFillColor(ink)
-    c.roundRect(0.5 * inch, 0.45 * inch, width - 1.0 * inch, 0.9 * inch, 8, fill=1, stroke=0)
+    c.rect(0, 0, width, footer_h, fill=1, stroke=0)
     c.setFillColor(accent)
-    c.rect(0.5 * inch, 0.45 * inch, 0.12 * inch, 0.9 * inch, fill=1, stroke=0)
-    text_x = 0.8 * inch
+    c.rect(0, 0, 0.14 * inch, footer_h, fill=1, stroke=0)
+
+    text_x = 0.45 * inch
     if HEADSHOT.exists():
         try:
-            c.drawImage(
-                str(HEADSHOT),
-                0.72 * inch,
-                0.58 * inch,
-                width=0.62 * inch,
-                height=0.62 * inch,
-                mask="auto",
-            )
-            text_x = 1.5 * inch
+            c.drawImage(str(HEADSHOT), 0.35 * inch, 0.16 * inch, width=0.56 * inch, height=0.56 * inch, mask="auto")
+            text_x = 1.1 * inch
         except Exception:
-            text_x = 0.8 * inch
+            text_x = 0.45 * inch
+
     c.setFillColor(white)
     c.setFont("Helvetica-Bold", 11)
-    c.drawString(text_x, 0.98 * inch, listing.cta or "Schedule a private showing")
+    c.drawString(text_x, 0.58 * inch, listing.cta or "Schedule a private showing")
     c.setFont("Helvetica", 9)
     agent_bits = [
         listing.agent_name or "Jason Lim",
@@ -202,17 +231,13 @@ def render_pdf(
         listing.agent_phone,
         listing.dre or BRAND_DRE,
     ]
-    c.drawString(text_x, 0.76 * inch, "  ·  ".join(b for b in agent_bits if b))
-    site = listing.listing_url or "https://realtor-jason-lim.vercel.app"
-    c.setFont("Helvetica", 8)
-    c.drawString(text_x, 0.58 * inch, site[:90])
-
-    if template_name == "Open House":
-        c.setFillColor(HexColor("#C45C26"))
-        c.roundRect(width - 2.4 * inch, height - 1.05 * inch, 1.8 * inch, 0.35 * inch, 4, fill=1, stroke=0)
-        c.setFillColor(white)
-        c.setFont("Helvetica-Bold", 9)
-        c.drawCentredString(width - 1.5 * inch, height - 0.93 * inch, "OPEN HOUSE")
+    c.drawString(text_x, 0.38 * inch, "  ·  ".join(b for b in agent_bits if b))
+    site = listing.listing_url or BRAND_SITE
+    # Prefer branded site on marketing materials
+    if "vercel.app" in site or not site:
+        site = BRAND_SITE
+    c.setFont("Helvetica", 8.5)
+    c.drawString(text_x, 0.2 * inch, site.replace("https://", "").replace("http://", "")[:70])
 
     c.showPage()
     c.save()

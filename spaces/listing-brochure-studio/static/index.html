@@ -133,9 +133,9 @@
         Paste a Compass listing link or enter photos + facts — generate a branded one-page PDF,
         then make light edits and download again.
         <span class="links">
-          <a href="https://realtor-jason-lim.vercel.app" target="_blank" rel="noreferrer">Website</a>
+          <a href="https://www.jasonlimrealty.com" target="_blank" rel="noreferrer">Website</a>
           ·
-          <a href="https://realtor-jason-lim.vercel.app/sell" target="_blank" rel="noreferrer">Sell / valuation</a>
+          <a href="https://www.jasonlimrealty.com/sell" target="_blank" rel="noreferrer">Sell / valuation</a>
         </span>
       </p>
     </header>
@@ -218,7 +218,7 @@
               <div><label>License</label><input id="dre" value="DRE #02444964" /></div>
             </div>
             <label>Listing / site URL</label>
-            <input id="listingUrl" value="https://realtor-jason-lim.vercel.app" />
+            <input id="listingUrl" value="https://www.jasonlimrealty.com" />
           </details>
 
           <div class="actions">
@@ -269,7 +269,7 @@
         <div class="actions">
           <button class="btn btn-primary" id="estBtn">Preview placeholder</button>
           <a class="btn btn-ghost" style="text-decoration:none;display:inline-flex;align-items:center"
-             href="https://realtor-jason-lim.vercel.app/sell" target="_blank" rel="noreferrer">
+             href="https://www.jasonlimrealty.com/sell" target="_blank" rel="noreferrer">
             Request live CMA on sell page
           </a>
         </div>
@@ -313,10 +313,12 @@
       description: "Light-filled Willow Glen home with an open living plan, chef-ready kitchen, and a private backyard suited for Silicon Valley entertaining.",
       bullets: "Open-concept living with abundant natural light\nChef's kitchen with island seating and quartz surfaces\nPrimary suite with spa bath and walk-in closet\nLandscaped backyard with covered patio",
       cta: "Book a private tour with Jason Lim",
+      listingUrl: "https://www.jasonlimrealty.com",
       photos: [
-        "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200",
-        "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200",
-        "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=1200"
+        "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1600",
+        "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1600",
+        "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=1600",
+        "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=1600"
       ]
     };
 
@@ -485,6 +487,42 @@
       return lines;
     }
 
+    function hexToRgb(hex) {
+      const h = (hex || "#1F6F78").replace("#", "");
+      return {
+        r: parseInt(h.slice(0, 2), 16),
+        g: parseInt(h.slice(2, 4), 16),
+        b: parseInt(h.slice(4, 6), 16),
+      };
+    }
+
+    async function coverImageDataUrl(src, destW, destH) {
+      // Center-crop to destination aspect ratio so photos fill the box edge-to-edge.
+      const img = await new Promise((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = reject;
+        el.src = src;
+      });
+      const canvas = document.createElement("canvas");
+      const scale = 2;
+      canvas.width = Math.max(1, Math.round(destW * scale));
+      canvas.height = Math.max(1, Math.round(destH * scale));
+      const ctx = canvas.getContext("2d");
+      const targetRatio = canvas.width / canvas.height;
+      const srcRatio = img.width / img.height;
+      let sx = 0, sy = 0, sw = img.width, sh = img.height;
+      if (srcRatio > targetRatio) {
+        sw = Math.round(img.height * targetRatio);
+        sx = Math.round((img.width - sw) / 2);
+      } else {
+        sh = Math.round(img.width / targetRatio);
+        sy = Math.round((img.height - sh) / 2);
+      }
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", 0.92);
+    }
+
     async function renderPdf() {
       const f = readForm();
       const jspdfNS = window.jspdf || window.jsPDF;
@@ -496,108 +534,133 @@
       const doc = new jsPDF({ unit: "pt", format: "letter" });
       const W = doc.internal.pageSize.getWidth();
       const H = doc.internal.pageSize.getHeight();
-      const accent = f.accent || "#1F6F78";
-      const ink = "#0B1F33";
-      const soft = "#E8F2F3";
+      const accent = hexToRgb(f.accent || "#1F6F78");
+      const ink = hexToRgb("#0B1F33");
+      const soft = hexToRgb("#E8F2F3");
+      const muted = { r: 90, g: 101, b: 112 };
 
-      doc.setFillColor(soft);
+      // Full-page ground
+      doc.setFillColor(soft.r, soft.g, soft.b);
       doc.rect(0, 0, W, H, "F");
-      doc.setFillColor(ink);
-      doc.rect(0, 0, W, 78, "F");
-      doc.setFillColor(accent);
-      doc.rect(0, 78, W, 6, "F");
+
+      // Full-bleed header
+      const headerH = 72;
+      doc.setFillColor(ink.r, ink.g, ink.b);
+      doc.rect(0, 0, W, headerH, "F");
+      doc.setFillColor(accent.r, accent.g, accent.b);
+      doc.rect(0, headerH - 5, W, 5, "F");
 
       doc.setTextColor(255, 255, 255);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.text(`${(f.agent || "Jason Lim").toUpperCase()}  ·  ${(f.brokerage || "Compass").toUpperCase()}`, 36, 28);
+      doc.setFontSize(10);
+      doc.text(`${(f.agent || "Jason Lim").toUpperCase()}  ·  ${(f.brokerage || "Compass").toUpperCase()}`, 28, 22);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(9);
-      doc.text(f.dre || "DRE #02444964", 36, 44);
+      doc.setFontSize(8);
+      doc.text(f.dre || "DRE #02444964", 28, 36);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(13);
-      doc.text(f.price || "", W - 36, 34, { align: "right" });
-      doc.setFontSize(18);
-      doc.text((f.headline || "Featured Listing").slice(0, 58), 36, 66);
-
-      // Hero image
-      const heroY = 100;
-      const heroH = f.template === "Luxury" ? 250 : 230;
-      doc.setFillColor(217, 229, 232);
-      doc.rect(30, heroY, W - 60, heroH, "F");
-      if (photoDataUrls[0]) {
-        try { doc.addImage(photoDataUrls[0], "JPEG", 30, heroY, W - 60, heroH, undefined, "FAST"); } catch (_) {}
-      }
-      doc.setFillColor(accent);
-      doc.rect(30, heroY, 8, heroH, "F");
+      doc.text(f.price || "", W - 28, 28, { align: "right" });
+      doc.setFontSize(17);
+      doc.text((f.headline || "Featured Listing").slice(0, 62), 28, 58);
 
       if (f.template === "Open House") {
         doc.setFillColor(196, 92, 38);
-        doc.roundedRect(W - 150, 88, 110, 22, 4, 4, "F");
+        doc.roundedRect(W - 128, 14, 100, 20, 3, 3, "F");
         doc.setTextColor(255, 255, 255);
-        doc.setFontSize(9);
-        doc.text("OPEN HOUSE", W - 95, 103, { align: "center" });
+        doc.setFontSize(8);
+        doc.text("OPEN HOUSE", W - 78, 27, { align: "center" });
       }
 
-      let y = heroY + heroH + 28;
-      doc.setTextColor(ink);
+      // Full-bleed hero (edge to edge)
+      const heroY = headerH;
+      const heroH = f.template === "Luxury" ? 268 : 246;
+      doc.setFillColor(201, 215, 219);
+      doc.rect(0, heroY, W, heroH, "F");
+      if (photoDataUrls[0]) {
+        try {
+          const heroImg = await coverImageDataUrl(photoDataUrls[0], W, heroH);
+          doc.addImage(heroImg, "JPEG", 0, heroY, W, heroH, undefined, "FAST");
+        } catch (_) {}
+      }
+      doc.setFillColor(accent.r, accent.g, accent.b);
+      doc.rect(0, heroY, 10, heroH, "F");
+
+      // Content
+      const pad = 28;
+      let y = heroY + heroH + 22;
+      doc.setTextColor(ink.r, ink.g, ink.b);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(13);
       const fullAddr = [f.address, f.city, f.state, f.zip].filter(Boolean).join(", ");
-      doc.text(fullAddr || "Address available on request", 36, y);
-      y += 16;
+      doc.text(fullAddr || "Address available on request", pad, y);
+      y += 15;
       doc.setFont("helvetica", "normal");
-      doc.setTextColor(90, 101, 112);
+      doc.setTextColor(muted.r, muted.g, muted.b);
       doc.setFontSize(10);
       const facts = [f.beds && `${f.beds} Beds`, f.baths && `${f.baths} Baths`, f.sqft && `${f.sqft} Sq Ft`, f.ptype].filter(Boolean).join("  ·  ");
-      doc.text(facts, 36, y);
+      doc.text(facts, pad, y);
 
-      y += 28;
-      doc.setTextColor(ink);
+      y += 24;
+      const rightX = W / 2 + 8;
+      doc.setTextColor(ink.r, ink.g, ink.b);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
-      doc.text("About this home", 36, y);
-      doc.text("Highlights", W / 2 + 10, y);
+      doc.text("About this home", pad, y);
+      doc.text("Highlights", rightX, y);
       y += 14;
       doc.setFont("helvetica", "normal");
-      doc.setTextColor(90, 101, 112);
+      doc.setTextColor(muted.r, muted.g, muted.b);
       doc.setFontSize(9.5);
-      const descLines = wrap(f.description, 52).slice(0, 8);
-      descLines.forEach((line, i) => doc.text(line, 36, y + i * 13));
-      (f.bullets || []).slice(0, 5).forEach((b, i) => {
+      wrap(f.description, 48).slice(0, 7).forEach((line, i) => doc.text(line, pad, y + i * 12.5));
+      (f.bullets || []).slice(0, 4).forEach((b, i) => {
         const by = y + i * 22;
-        doc.setFillColor(accent);
-        doc.circle(W / 2 + 16, by - 2, 2.5, "F");
-        wrap(b, 40).slice(0, 2).forEach((line, j) => {
-          doc.setTextColor(90, 101, 112);
-          doc.text(line, W / 2 + 24, by + j * 11);
+        doc.setFillColor(accent.r, accent.g, accent.b);
+        doc.circle(rightX + 5, by - 2, 2.4, "F");
+        wrap(b, 42).slice(0, 2).forEach((line, j) => {
+          doc.setTextColor(muted.r, muted.g, muted.b);
+          doc.text(line, rightX + 14, by + j * 11);
         });
       });
 
-      // Thumbnails
+      // Full-width thumbnail strip + full-bleed footer (no dead space)
+      const footerH = 64;
+      const gap = 6;
       const thumbs = photoDataUrls.slice(1, 4);
-      const ty = H - 180;
-      thumbs.forEach((img, i) => {
-        const x = 32 + i * 185;
-        doc.setFillColor(217, 229, 232);
-        doc.roundedRect(x, ty, 175, 105, 6, 6, "F");
-        try { doc.addImage(img, "JPEG", x, ty, 175, 105, undefined, "FAST"); } catch (_) {}
-      });
+      const thumbH = 118;
+      const thumbY = H - footerH - gap - thumbH;
+      const n = Math.max(thumbs.length, 1);
+      const thumbW = (W - gap * (n + 1)) / n;
+      if (thumbs.length) {
+        for (let i = 0; i < thumbs.length; i++) {
+          const x = gap + i * (thumbW + gap);
+          doc.setFillColor(201, 215, 219);
+          doc.rect(x, thumbY, thumbW, thumbH, "F");
+          try {
+            const tImg = await coverImageDataUrl(thumbs[i], thumbW, thumbH);
+            doc.addImage(tImg, "JPEG", x, thumbY, thumbW, thumbH, undefined, "FAST");
+          } catch (_) {}
+        }
+      } else {
+        doc.setFillColor(215, 228, 231);
+        doc.rect(gap, thumbY, W - 2 * gap, thumbH, "F");
+      }
 
-      // Footer CTA
-      doc.setFillColor(ink);
-      doc.roundedRect(30, H - 62, W - 60, 42, 8, 8, "F");
-      doc.setFillColor(accent);
-      doc.rect(30, H - 62, 8, 42, "F");
+      // Full-bleed footer (keeps URL fully inside page)
+      doc.setFillColor(ink.r, ink.g, ink.b);
+      doc.rect(0, H - footerH, W, footerH, "F");
+      doc.setFillColor(accent.r, accent.g, accent.b);
+      doc.rect(0, H - footerH, 10, footerH, "F");
       doc.setTextColor(255, 255, 255);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
-      doc.text(f.cta || "Schedule a private showing", 50, H - 45);
+      doc.text(f.cta || "Schedule a private showing", 28, H - 42);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
-      doc.text([f.agent, f.brokerage, f.phone, f.dre].filter(Boolean).join("  ·  "), 50, H - 30);
-      doc.setFontSize(8);
-      doc.text((f.listingUrl || "https://realtor-jason-lim.vercel.app").slice(0, 90), 50, H - 17);
+      doc.text([f.agent, f.brokerage, f.phone, f.dre].filter(Boolean).join("  ·  "), 28, H - 27);
+      doc.setFontSize(8.5);
+      let site = f.listingUrl || "https://www.jasonlimrealty.com";
+      if (!site || site.includes("vercel.app")) site = "https://www.jasonlimrealty.com";
+      doc.text(site.replace(/^https?:\/\//, "").slice(0, 70), 28, H - 13);
 
       doc.save(`${(f.address || "listing").replace(/[^\w]+/g, "_").slice(0, 40)}_brochure.pdf`);
       if (photoDataUrls[0]) $("preview").src = photoDataUrls[0];

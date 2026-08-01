@@ -27,7 +27,7 @@ Generate a branded one-page PDF brochure from:
 3. **Compass listing URL** (`homedetails/...` via RapidAPI)
 
 Also includes an **AI Estimate (Coming Soon)** tab aligned with
-[realtor-jason-lim.vercel.app/sell](https://realtor-jason-lim.vercel.app/sell).
+[www.jasonlimrealty.com/sell](https://www.jasonlimrealty.com/sell).
 
 ## Space secrets
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-# Brand defaults aligned with https://realtor-jason-lim.vercel.app
+# Brand defaults aligned with https://www.jasonlimrealty.com
 BRAND_AGENT_NAME = "Jason Lim"
 BRAND_AGENT_PHONE = "(510) 480-7191"
 BRAND_AGENT_EMAIL = ""
@@ -12,8 +12,8 @@ BRAND_DRE = "DRE #02444964"
 BRAND_ACCENT = "#1F6F78"
 BRAND_INK = "#0B1F33"
 BRAND_SOFT = "#E8F2F3"
-BRAND_SITE = "https://realtor-jason-lim.vercel.app"
-BRAND_SELL = "https://realtor-jason-lim.vercel.app/sell"
+BRAND_SITE = "https://www.jasonlimrealty.com"
+BRAND_SELL = "https://www.jasonlimrealty.com/sell"
 
 
 @dataclass
@@ -100,10 +100,10 @@ SAMPLE_LISTING = Listing(
     dre=BRAND_DRE,
     listing_url=BRAND_SITE,
     photo_urls=[
-        "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200",
-        "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200",
-        "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=1200",
-        "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=1200",
+        "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1600",
+        "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1600",
+        "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=1600",
+        "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=1600",
     ],
     cta="Book a private tour with Jason Lim",
     accent_color=BRAND_ACCENT,
