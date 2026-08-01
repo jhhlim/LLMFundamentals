@@ -85,6 +85,7 @@ export function HeroSection({ listing }: { listing: Listing }) {
               <p className="font-medium">{listing.agent.name}</p>
               <p className="text-sm text-white/65">{listing.agent.title}</p>
               <p className="text-sm text-gold-soft">{listing.agent.phone}</p>
+              <p className="text-sm text-white/70">{listing.agent.email}</p>
             </div>
           </div>
 

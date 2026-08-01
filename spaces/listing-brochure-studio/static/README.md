@@ -11,4 +11,4 @@ short_description: Import Compass/Zillow/Redfin URL → luxury brochure
 
 # Jason Lim · Luxury Listing Brochure
 
-Paste a Compass, Zillow, or Redfin listing URL (+ RapidAPI key) to generate an editorial brochure.
+Paste a Compass, Zillow, or Redfin listing URL (+ RapidAPI key).

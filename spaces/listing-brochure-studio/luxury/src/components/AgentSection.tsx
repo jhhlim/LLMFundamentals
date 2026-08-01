@@ -63,10 +63,6 @@ export function AgentSection({ listing }: { listing: Listing }) {
             >
               <Globe className="h-5 w-5 text-gold-soft" /> jasonlimrealty.com
             </a>
-            <div className="flex gap-3 pt-2 text-[11px] uppercase tracking-[0.2em] text-white/45">
-              <span className="rounded-full border border-white/20 px-3 py-2">Instagram</span>
-              <span className="rounded-full border border-white/20 px-3 py-2">LinkedIn</span>
-            </div>
           </FadeIn>
         </div>
 

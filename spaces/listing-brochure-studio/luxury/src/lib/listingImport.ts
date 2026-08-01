@@ -58,7 +58,7 @@ function asList(value: unknown): string[] {
         if (typeof item === 'string') return item
         if (item && typeof item === 'object') {
           const obj = item as Record<string, unknown>
-          return asString(obj.url || obj.href || obj.src || obj.name || obj.title || obj.text)
+          return asString(obj.url || obj.href || obj.src || obj.name || obj.title || obj.text || obj.value || obj.label)
         }
         return ''
       })
@@ -66,6 +66,64 @@ function asList(value: unknown): string[] {
   }
   if (typeof value === 'string') return value.split(/[\n|;]/).map((s) => s.trim()).filter(Boolean)
   return [String(value)]
+}
+
+function dig(data: Record<string, unknown>, paths: string[]): unknown {
+  for (const path of paths) {
+    let cur: unknown = data
+    let ok = true
+    for (const part of path.split('.')) {
+      if (cur && typeof cur === 'object' && part in (cur as Record<string, unknown>)) {
+        cur = (cur as Record<string, unknown>)[part]
+      } else {
+        ok = false
+        break
+      }
+    }
+    if (ok && cur != null && cur !== '') return cur
+  }
+  return null
+}
+
+function toNumber(value: unknown): number | null {
+  if (value == null || value === '') return null
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  const cleaned = String(value).replace(/,/g, '').match(/(\d+(\.\d+)?)/)
+  if (!cleaned) return null
+  const n = Number(cleaned[1])
+  return Number.isFinite(n) ? n : null
+}
+
+function pickNumber(data: Record<string, unknown>, paths: string[], textBlobs: string[] = []): number | null {
+  for (const path of paths) {
+    const n = toNumber(dig(data, [path]))
+    if (n != null && n > 0) return n
+  }
+  return null
+}
+
+function matchFromText(blobs: string[], patterns: RegExp[]): number | null {
+  for (const blob of blobs) {
+    for (const pattern of patterns) {
+      const m = blob.match(pattern)
+      if (m?.[1]) {
+        const n = toNumber(m[1])
+        if (n != null && n > 0) return n
+      }
+    }
+  }
+  return null
+}
+
+function prettyHomeType(raw: string): string {
+  const t = raw.replace(/_/g, ' ').trim()
+  if (!t) return 'home'
+  const lower = t.toLowerCase()
+  if (lower.includes('single') || lower.includes('house') || lower.includes('residence')) return 'home'
+  if (lower.includes('town')) return 'townhome'
+  if (lower.includes('condo')) return 'condo'
+  if (lower.includes('co-op') || lower.includes('coop')) return 'co-op'
+  return lower
 }
 
 function extractZpid(url: string): string | null {
@@ -143,29 +201,88 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _sou
     ...asList(data.image_urls),
     ...asList(data.images),
     ...asList(data.image_url),
+    ...asList(dig(data, ['media.photos', 'gallery', 'photoUrls'])),
   ]
-  const amenities = asList(data.amenities || data.features || data.highlights)
-  const address = asString(data.street_address || data.address || data.name)
-  const city = asString(data.city)
-  const state = asString(data.state)
-  const zip = asString(data.zip_code || data.zipcode || data.zip)
-  const neighborhood = asString(data.neighborhood || data.area || data.subdivision)
-  const description = asString(data.description || data.remarks || data.public_remarks)
-  const price = money(data.price || data.list_price || data.listPrice)
-  const beds = data.beds ?? data.bedrooms
-  const baths = data.baths ?? data.bathrooms
-  const sqft = data.sqft ?? data.living_area_sqft ?? data.living_area ?? data.square_feet
-  const lot = data.lot_size_sqft ?? data.lot_size ?? data.lotSqFt
-  const built = data.year_built ?? data.yearBuilt
-  const garage = data.garage || data.parking
+  const amenities = asList(data.amenities || data.features || data.highlights || data.key_features)
+  const keyFacts = asList(data.keyFacts || data.key_facts || data.facts || data.propertyFacts)
+  const address = asString(
+    dig(data, ['street_address', 'address', 'name', 'location.streetAddress', 'address.streetAddress']),
+  )
+  const city = asString(dig(data, ['city', 'address.city', 'location.city']))
+  const state = asString(dig(data, ['state', 'address.state', 'location.state']))
+  const zip = asString(dig(data, ['zip_code', 'zipcode', 'zip', 'address.zipcode', 'address.zip']))
+  const neighborhood = asString(dig(data, ['neighborhood', 'area', 'subdivision', 'region']))
+  const description = asString(dig(data, ['description', 'remarks', 'public_remarks', 'overview']))
+  const price = money(dig(data, ['price', 'list_price', 'listPrice', 'priceInfo.price']))
+
+  const textBlobs = [...amenities, ...keyFacts, description, asString(data.size), asString(data.summary)]
+
+  const beds =
+    pickNumber(data, ['beds', 'bedrooms', 'beds_total', 'numBedrooms', 'bedroomsTotal', 'property.beds']) ??
+    matchFromText(textBlobs, [/(\d+(?:\.\d+)?)\s*(?:bed|br|bd)\b/i, /bedrooms?\s*[:#]?\s*(\d+(?:\.\d+)?)/i])
+
+  // Compass often splits full/half baths or nests under size / details.
+  const bathsFull = pickNumber(data, ['baths', 'bathrooms', 'baths_total', 'numBathrooms', 'bathroomsTotal', 'bathsFull', 'full_baths'])
+  const bathsHalf = pickNumber(data, ['bathsHalf', 'half_baths', 'bathroomsHalf', 'partialBaths'])
+  let baths = bathsFull
+  if (bathsFull != null && bathsHalf != null) baths = bathsFull + bathsHalf * 0.5
+  if (baths == null) {
+    baths = matchFromText(textBlobs, [/(\d+(?:\.\d+)?)\s*(?:bath|ba)\b/i, /bathrooms?\s*[:#]?\s*(\d+(?:\.\d+)?)/i])
+  }
+
+  let sqft =
+    pickNumber(data, [
+      'sqft',
+      'living_area_sqft',
+      'living_area',
+      'square_feet',
+      'livingArea',
+      'building_size',
+      'size.squareFeet',
+      'size.livingArea',
+      'property.livingArea',
+    ]) ??
+    matchFromText(textBlobs, [
+      /([\d,]+)\s*(?:sq\.?\s*ft|sqft|square feet)/i,
+      /living area\s*[:#]?\s*([\d,]+)/i,
+    ])
+
+  let lot =
+    pickNumber(data, [
+      'lot_size_sqft',
+      'lot_size',
+      'lotSqFt',
+      'lotSize',
+      'lot_sqft',
+      'lotSquareFeet',
+      'size.lotSize',
+      'property.lotSize',
+    ]) ?? matchFromText(textBlobs, [/([\d,]+)\s*(?:lot|lot size)/i, /lot size\s*[:#]?\s*([\d,.]+)\s*(?:sq|sf|acres?)?/i])
+
+  // Lot sometimes comes in acres from Compass/MLS.
+  const lotAcres =
+    pickNumber(data, ['lot_acres', 'lotAcres', 'acres', 'lotSizeAcres']) ??
+    matchFromText(textBlobs, [/([\d.]+)\s*acres?/i])
+  if ((lot == null || lot < 100) && lotAcres != null) {
+    lot = Math.round(lotAcres * 43560)
+  }
+
+  const built =
+    pickNumber(data, ['year_built', 'yearBuilt', 'building.year_built', 'building.yearBuilt', 'year']) ??
+    matchFromText(textBlobs, [/built\s*[:#]?\s*(\d{4})/i, /(\d{4})\s*built/i])
+
+  const garageRaw = dig(data, ['garage', 'parking', 'garageSpaces', 'numGarageSpaces', 'parkingSpaces'])
+  const garageNum =
+    toNumber(garageRaw) ??
+    matchFromText([...asList(garageRaw), ...textBlobs], [/(\d+)\s*(?:car\s*)?garage/i, /garage\s*[:#]?\s*(\d+)/i])
+  const garageValue =
+    garageNum != null ? `${garageNum} Car` : asList(garageRaw)[0] || (garageRaw != null ? asString(garageRaw) : '—')
+
   const images = buildImages(photos.length ? photos : demoListing.images.map((i) => i.src))
   const place = neighborhood || city || 'this neighborhood'
+  const homeType = prettyHomeType(asString(dig(data, ['property_type', 'home_type', 'type', 'propertyType'])))
 
-  const garageValue = Array.isArray(garage)
-    ? asString(garage[0], '—')
-    : garage != null
-      ? asString(garage)
-      : '—'
+  const fmtSqft = (n: number | null) => (n == null ? '—' : `${Math.round(n).toLocaleString()} SF`)
 
   return withJasonBrand(
     {
@@ -177,7 +294,7 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _sou
       price: price || 'Price on request',
       status: asString(data.status || data.listing_status, 'Offered exclusively').replace(/_/g, ' '),
       headline: `Modern living in ${place}`,
-      subhead: `A refined ${asString(data.property_type || data.home_type, 'residence').replace(/_/g, ' ').toLowerCase()} presentation for Silicon Valley sellers and buyers.`,
+      subhead: `A refined ${homeType} presentation for Silicon Valley sellers and buyers.`,
       about:
         description ||
         `Discover this residence in ${place}. Thoughtful spaces, standout presentation, and a setting that makes everyday life feel considered — prepared as a private listing brochure by Jason Lim, Compass.`,
@@ -186,16 +303,8 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _sou
       stats: [
         { label: 'Bedrooms', value: beds != null ? String(beds) : '—', icon: 'bed' },
         { label: 'Bathrooms', value: baths != null ? String(baths) : '—', icon: 'bath' },
-        {
-          label: 'Living Area',
-          value: typeof sqft === 'number' ? `${Math.round(sqft).toLocaleString()} SF` : asString(sqft, '—'),
-          icon: 'area',
-        },
-        {
-          label: 'Lot Size',
-          value: typeof lot === 'number' ? `${Math.round(lot).toLocaleString()} SF` : asString(lot, '—'),
-          icon: 'lot',
-        },
+        { label: 'Living Area', value: fmtSqft(sqft), icon: 'area' },
+        { label: 'Lot Size', value: fmtSqft(lot), icon: 'lot' },
         { label: 'Garage', value: garageValue, icon: 'garage' },
         { label: 'Year Built', value: built != null ? String(built) : '—', icon: 'built' },
       ],
@@ -225,12 +334,18 @@ async function rapidGet(host: string, path: string, apiKey: string): Promise<Rec
   } catch {
     throw new Error(`API returned non-JSON (${res.status}).`)
   }
+  const apiMessage = asString(json.message || json.error)
+  if (/quota|exceeded|upgrade your plan/i.test(apiMessage)) {
+    throw new Error(
+      'RapidAPI monthly quota exceeded for this listing API. Upgrade the plan on RapidAPI, or wait until quota resets, then re-import.',
+    )
+  }
   if (res.status === 401 || res.status === 403) {
     throw new Error(`API key rejected for ${host}. Subscribe to that RapidAPI product, then try again.`)
   }
   if (res.status === 429) throw new Error('Rate limit hit. Wait a moment and retry.')
   if (res.status >= 400) {
-    throw new Error(asString(json.message || json.error, `API error ${res.status}`))
+    throw new Error(apiMessage || `API error ${res.status}`)
   }
   if (json.success === false) {
     throw new Error(asString(json.error || json.message, 'Listing fetch failed'))

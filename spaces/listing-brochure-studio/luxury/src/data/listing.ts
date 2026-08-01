@@ -185,7 +185,7 @@ export const demoListing: Listing = {
     title: 'Compass REALTOR®',
     brokerage: 'Compass',
     phone: '(510) 480-7191',
-    email: 'jason@jasonlimrealty.com',
+    email: 'jason.lim@compass.com',
     dre: 'DRE #02444964',
     photo: 'https://www.jasonlimrealty.com/images/jason-lim-headshot.jpg',
     website: 'https://www.jasonlimrealty.com',
