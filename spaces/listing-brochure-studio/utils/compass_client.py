@@ -8,12 +8,11 @@ import requests
 
 from .listing import Listing
 
-# Optional third-party Compass listing API (RapidAPI / PullAPI style).
-# Set RAPIDAPI_KEY as a Hugging Face Space secret to enable URL import.
 RAPIDAPI_HOST = os.getenv(
     "RAPIDAPI_HOST", "compass-com-real-estate-data-api.p.rapidapi.com"
 )
 PROPERTY_PATH = os.getenv("COMPASS_PROPERTY_PATH", "/compass/property")
+SEARCH_PATH = os.getenv("COMPASS_SEARCH_PATH", "/compass/search")
 
 
 def _rapidapi_key() -> str | None:
@@ -28,19 +27,12 @@ def compass_api_configured() -> bool:
     return bool(_rapidapi_key())
 
 
-def _dig(data: dict[str, Any], *paths: str, default: Any = None) -> Any:
-    for path in paths:
-        cur: Any = data
-        ok = True
-        for part in path.split("."):
-            if isinstance(cur, dict) and part in cur:
-                cur = cur[part]
-            else:
-                ok = False
-                break
-        if ok and cur not in (None, ""):
-            return cur
-    return default
+def _headers() -> dict[str, str]:
+    return {
+        "x-rapidapi-key": _rapidapi_key() or "",
+        "x-rapidapi-host": RAPIDAPI_HOST,
+        "Content-Type": "application/json",
+    }
 
 
 def _format_price(value: Any) -> str:
@@ -59,22 +51,19 @@ def _format_price(value: Any) -> str:
         return str(value)
 
 
-def _as_list(value: Any) -> list[str]:
+def _as_str_list(value: Any) -> list[str]:
     if not value:
         return []
     if isinstance(value, list):
-        out = []
+        out: list[str] = []
         for item in value:
-            if isinstance(item, str):
-                out.append(item)
+            if isinstance(item, str) and item.strip():
+                out.append(item.strip())
             elif isinstance(item, dict):
-                url = item.get("url") or item.get("href") or item.get("src")
-                if url:
-                    out.append(str(url))
-                else:
-                    text = item.get("name") or item.get("title") or item.get("text")
-                    if text:
-                        out.append(str(text))
+                for key in ("url", "href", "src", "name", "title", "text"):
+                    if item.get(key):
+                        out.append(str(item[key]))
+                        break
         return out
     if isinstance(value, str):
         return [v.strip() for v in re.split(r"[\n|;]", value) if v.strip()]
@@ -85,59 +74,34 @@ def normalize_compass_payload(payload: dict[str, Any]) -> Listing:
     data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
     if isinstance(data.get("property"), dict):
         data = data["property"]
-    if isinstance(data.get("listing"), dict):
-        data = data["listing"]
 
-    photos = (
-        _as_list(_dig(data, "photos", "images", "photo_urls", "media"))
-        or _as_list(_dig(data, "image_urls"))
-    )
-    amenities = _as_list(_dig(data, "amenities", "features", "highlights"))
-    agent = _dig(data, "agent", "listing_agent", "agents.0", default={}) or {}
-    if isinstance(agent, list) and agent:
-        agent = agent[0]
+    photos = _as_str_list(data.get("photos")) or _as_str_list(data.get("image_url"))
+    amenities = _as_str_list(data.get("amenities"))
+    agents = data.get("agents") or []
+    agent = agents[0] if isinstance(agents, list) and agents else {}
+    if not isinstance(agent, dict):
+        agent = {}
 
-    address = str(
-        _dig(data, "address", "street", "street_address", "formatted_address", default="")
-        or ""
-    )
-    city = str(_dig(data, "city", "address.city", default="") or "")
-    state = str(_dig(data, "state", "address.state", default="") or "")
-    zip_code = str(_dig(data, "zip", "zip_code", "postalCode", "address.zip", default="") or "")
-    neighborhood = str(_dig(data, "neighborhood", "area", "subdivision", default="") or "")
-    description = str(_dig(data, "description", "remarks", "public_remarks", default="") or "")
-    price = _format_price(_dig(data, "price", "list_price", "listPrice", "asking_price"))
+    street = str(data.get("street_address") or data.get("address") or data.get("name") or "")
+    city = str(data.get("city") or "")
+    state = str(data.get("state") or "")
+    zip_code = str(data.get("zip_code") or data.get("zip") or "")
+    neighborhood = str(data.get("neighborhood") or "")
+    description = str(data.get("description") or "")
+    price = _format_price(data.get("price"))
+    beds = data.get("beds")
+    baths = data.get("baths")
+    sqft = data.get("sqft")
+    property_type = str(data.get("property_type") or "Single Family")
 
-    beds = _dig(data, "beds", "bedrooms", "beds_total")
-    baths = _dig(data, "baths", "bathrooms", "baths_total")
-    sqft = _dig(data, "sqft", "living_area", "square_feet", "size")
-    property_type = str(
-        _dig(data, "property_type", "home_type", "type", default="Single Family") or "Single Family"
-    )
-
-    agent_name = str(
-        _dig(agent if isinstance(agent, dict) else {}, "name", "full_name", default="")
-        or _dig(data, "agent_name", default="")
-        or ""
-    )
-    agent_phone = str(
-        _dig(agent if isinstance(agent, dict) else {}, "phone", "mobile", default="")
-        or _dig(data, "agent_phone", default="")
-        or ""
-    )
-    agent_email = str(
-        _dig(agent if isinstance(agent, dict) else {}, "email", default="")
-        or _dig(data, "agent_email", default="")
-        or ""
-    )
-
-    bullets = amenities[:4] if amenities else []
+    bullets = amenities[:4]
     if description and not bullets:
         sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", description) if s.strip()]
         bullets = sentences[:4]
 
+    place = neighborhood or city or "this neighborhood"
     return Listing(
-        address=address,
+        address=street,
         city=city,
         state=state,
         zip_code=zip_code,
@@ -148,49 +112,41 @@ def normalize_compass_payload(payload: dict[str, Any]) -> Listing:
         property_type=property_type,
         neighborhood=neighborhood,
         description=description,
-        headline=f"{'Stunning home' if not neighborhood else f'Welcome to {neighborhood}'}",
+        headline=f"Welcome to {place}",
         bullets=bullets,
-        amenities=amenities[:8],
-        agent_name=agent_name,
-        agent_phone=agent_phone,
-        agent_email=agent_email,
-        brokerage=str(_dig(data, "brokerage", "office", default="Compass") or "Compass"),
-        listing_url=str(_dig(data, "url", "listing_url", default="") or ""),
+        amenities=amenities[:10],
+        agent_name=str(agent.get("name") or ""),
+        agent_phone=str(agent.get("phone") or ""),
+        agent_email=str(agent.get("email") or ""),
+        brokerage=str(agent.get("company") or "Compass"),
+        listing_url=str(data.get("url") or ""),
         photo_urls=photos[:12],
-        cta="Schedule a private showing",
+        cta="Schedule a private showing with Jason Lim",
+        accent_color="#1F6F78",
     )
 
 
 def fetch_compass_listing(url: str) -> tuple[Listing | None, str]:
-    """
-    Fetch listing details for a Compass URL via RapidAPI if configured.
-    Returns (listing, status_message).
-    """
     url = (url or "").strip()
     if not url:
-        return None, "Paste a Compass listing URL, or use Manual / Demo mode."
+        return None, "Paste a Compass listing URL (homedetails/…), or use Manual / Demo mode."
     if not is_compass_url(url):
         return None, "URL should be a compass.com listing link."
 
-    key = _rapidapi_key()
-    if not key:
+    if not _rapidapi_key():
         return None, (
-            "Compass URL import needs a Space secret: RAPIDAPI_KEY "
-            "(RapidAPI Compass listing API). Use Manual entry or Load Demo for now."
+            "Compass URL import needs Space secret RAPIDAPI_KEY. "
+            "Use Manual entry or Load Demo for now."
         )
 
     endpoint = f"https://{RAPIDAPI_HOST}{PROPERTY_PATH}"
-    headers = {
-        "x-rapidapi-key": key,
-        "x-rapidapi-host": RAPIDAPI_HOST,
-    }
     try:
-        resp = requests.get(endpoint, headers=headers, params={"url": url}, timeout=45)
+        resp = requests.get(endpoint, headers=_headers(), params={"url": url}, timeout=60)
     except requests.RequestException as exc:
         return None, f"Compass API request failed: {exc}"
 
     if resp.status_code == 401:
-        return None, "Compass API rejected the key (401). Check RAPIDAPI_KEY in Space secrets."
+        return None, "Compass API rejected the key (401). Check RAPIDAPI_KEY."
     if resp.status_code == 429:
         return None, "Compass API rate limit hit. Try again shortly, or use Manual mode."
     if resp.status_code >= 400:
@@ -199,10 +155,51 @@ def fetch_compass_listing(url: str) -> tuple[Listing | None, str]:
     try:
         payload = resp.json()
     except ValueError:
-        return None, "Compass API returned non-JSON. Check provider response format."
+        return None, "Compass API returned non-JSON."
+
+    if payload.get("success") is False:
+        return None, f"Compass API: {payload.get('error') or 'request failed'}"
 
     listing = normalize_compass_payload(payload)
     listing.listing_url = listing.listing_url or url
     if not listing.address and not listing.photo_urls and not listing.price:
-        return None, "API responded but listing fields were empty. Try Manual mode or another URL."
-    return listing, "Loaded listing from Compass API."
+        return None, "API responded but listing fields were empty. Try another URL or Manual mode."
+    return listing, "Loaded listing from Compass."
+
+
+def search_compass_listings(
+    location: str,
+    listing_type: str = "for_sale",
+    beds: str | int | None = None,
+    min_price: str | int | None = None,
+    max_price: str | int | None = None,
+) -> tuple[list[dict[str, Any]], str]:
+    if not _rapidapi_key():
+        return [], "Search needs RAPIDAPI_KEY Space secret."
+    location = (location or "").strip()
+    if not location:
+        return [], "Enter a city or neighborhood to search."
+
+    params: dict[str, Any] = {"location": location, "listing_type": listing_type or "for_sale", "page": 1}
+    if beds:
+        params["beds"] = beds
+    if min_price:
+        params["min_price"] = min_price
+    if max_price:
+        params["max_price"] = max_price
+
+    endpoint = f"https://{RAPIDAPI_HOST}{SEARCH_PATH}"
+    try:
+        resp = requests.get(endpoint, headers=_headers(), params=params, timeout=60)
+        payload = resp.json()
+    except Exception as exc:  # noqa: BLE001
+        return [], f"Search failed: {exc}"
+
+    if resp.status_code >= 400:
+        return [], f"Search error {resp.status_code}: {resp.text[:200]}"
+
+    data = payload.get("data") if isinstance(payload, dict) else None
+    results = (data or {}).get("results") if isinstance(data, dict) else []
+    if not results:
+        return [], "No search results returned (API may be sparse). Paste a Compass homedetails URL instead."
+    return results, f"Found {len(results)} listings."

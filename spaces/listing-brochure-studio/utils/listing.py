@@ -3,6 +3,18 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+# Brand defaults aligned with https://realtor-jason-lim.vercel.app
+BRAND_AGENT_NAME = "Jason Lim"
+BRAND_AGENT_PHONE = "(510) 480-7191"
+BRAND_AGENT_EMAIL = ""
+BRAND_BROKERAGE = "Compass"
+BRAND_DRE = "DRE #02444964"
+BRAND_ACCENT = "#1F6F78"
+BRAND_INK = "#0B1F33"
+BRAND_SOFT = "#E8F2F3"
+BRAND_SITE = "https://realtor-jason-lim.vercel.app"
+BRAND_SELL = "https://realtor-jason-lim.vercel.app/sell"
+
 
 @dataclass
 class Listing:
@@ -20,14 +32,15 @@ class Listing:
     headline: str = ""
     bullets: list[str] = field(default_factory=list)
     amenities: list[str] = field(default_factory=list)
-    agent_name: str = ""
-    agent_phone: str = ""
-    agent_email: str = ""
-    brokerage: str = "Compass"
+    agent_name: str = BRAND_AGENT_NAME
+    agent_phone: str = BRAND_AGENT_PHONE
+    agent_email: str = BRAND_AGENT_EMAIL
+    brokerage: str = BRAND_BROKERAGE
+    dre: str = BRAND_DRE
     listing_url: str = ""
     photo_urls: list[str] = field(default_factory=list)
     cta: str = "Schedule a private showing"
-    accent_color: str = "#1F4E5F"
+    accent_color: str = BRAND_ACCENT
 
     def full_address(self) -> str:
         parts = [self.address, self.city, self.state, self.zip_code]
@@ -58,39 +71,40 @@ class Listing:
 
 
 SAMPLE_LISTING = Listing(
-    address="2147 Maple Grove Lane",
-    city="Austin",
-    state="TX",
-    zip_code="78703",
-    price="$1,285,000",
+    address="1287 Willow Glen Way",
+    city="San Jose",
+    state="CA",
+    zip_code="95125",
+    price="$1,895,000",
     beds="4",
-    baths="3.5",
-    sqft="2,840",
+    baths="3",
+    sqft="2,450",
     property_type="Single Family",
-    neighborhood="Tarrytown",
+    neighborhood="Willow Glen",
     description=(
-        "Light-filled modern home on a quiet tree-lined street. Open living spaces, "
-        "chef's kitchen, and a private backyard oasis perfect for entertaining."
+        "Light-filled Willow Glen home with an open living plan, chef-ready kitchen, "
+        "and a private backyard suited for Silicon Valley entertaining. Thoughtful "
+        "updates throughout keep the classic neighborhood feel while delivering modern comfort."
     ),
-    headline="Modern Living in Tarrytown",
+    headline="Modern living in Willow Glen",
     bullets=[
-        "Open-concept living with floor-to-ceiling windows",
-        "Chef's kitchen with quartz counters and island seating",
+        "Open-concept living with abundant natural light",
+        "Chef's kitchen with island seating and quartz surfaces",
         "Primary suite with spa bath and walk-in closet",
         "Landscaped backyard with covered patio",
     ],
-    amenities=["Hardwood floors", "Two-car garage", "Smart home wiring", "EV charger ready"],
-    agent_name="Alex Rivera",
-    agent_phone="(512) 555-0142",
-    agent_email="alex.rivera@example.com",
-    brokerage="Compass",
-    listing_url="https://www.compass.com/",
+    amenities=["Hardwood floors", "Two-car garage", "EV charger ready", "Smart home wiring"],
+    agent_name=BRAND_AGENT_NAME,
+    agent_phone=BRAND_AGENT_PHONE,
+    brokerage=BRAND_BROKERAGE,
+    dre=BRAND_DRE,
+    listing_url=BRAND_SITE,
     photo_urls=[
         "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200",
         "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200",
         "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=1200",
         "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=1200",
     ],
-    cta="Book your private tour this weekend",
-    accent_color="#1F4E5F",
+    cta="Book a private tour with Jason Lim",
+    accent_color=BRAND_ACCENT,
 )

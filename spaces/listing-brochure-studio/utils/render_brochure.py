@@ -14,12 +14,13 @@ from reportlab.lib.units import inch
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
-from .listing import Listing
+from .listing import BRAND_ACCENT, BRAND_DRE, BRAND_INK, BRAND_SOFT, Listing
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets"
+HEADSHOT = ASSETS / "jason-lim-headshot.jpg"
 
 
-def _hex(color: str, fallback: str = "#1F4E5F") -> HexColor:
+def _hex(color: str, fallback: str = BRAND_ACCENT) -> HexColor:
     try:
         return HexColor(color or fallback)
     except Exception:
@@ -84,27 +85,32 @@ def render_pdf(
 
     width, height = letter
     c = canvas.Canvas(path, pagesize=letter)
-    accent = _hex(listing.accent_color)
-    ink = HexColor("#1A1A1A")
+    accent = _hex(listing.accent_color or BRAND_ACCENT)
+    ink = _hex(BRAND_INK, "#0B1F33")
     muted = HexColor("#5A6570")
-    soft = HexColor("#F3F1EC")
+    soft = _hex(BRAND_SOFT, "#E8F2F3")
 
     # Atmosphere band
     c.setFillColor(soft)
     c.rect(0, 0, width, height, fill=1, stroke=0)
-    c.setFillColor(accent)
+    c.setFillColor(ink)
     c.rect(0, height - 1.15 * inch, width, 1.15 * inch, fill=1, stroke=0)
+    c.setFillColor(accent)
+    c.rect(0, height - 1.15 * inch, width, 0.08 * inch, fill=1, stroke=0)
 
     # Brand + price
     c.setFillColor(white)
     c.setFont("Helvetica-Bold", 11)
-    c.drawString(0.6 * inch, height - 0.45 * inch, (listing.brokerage or "BROCHURE STUDIO").upper())
-    c.setFont("Helvetica", 10)
-    c.drawRightString(width - 0.6 * inch, height - 0.45 * inch, listing.price or "")
+    brand_line = f"{listing.agent_name or 'Jason Lim'}  ·  {listing.brokerage or 'Compass'}"
+    c.drawString(0.6 * inch, height - 0.42 * inch, brand_line.upper())
+    c.setFont("Helvetica", 8.5)
+    c.drawString(0.6 * inch, height - 0.58 * inch, listing.dre or BRAND_DRE)
+    c.setFont("Helvetica-Bold", 12)
+    c.drawRightString(width - 0.6 * inch, height - 0.48 * inch, listing.price or "")
 
-    c.setFont("Helvetica-Bold", 22)
+    c.setFont("Helvetica-Bold", 20)
     headline = listing.headline or "Featured Listing"
-    c.drawString(0.6 * inch, height - 0.9 * inch, headline[:58])
+    c.drawString(0.6 * inch, height - 0.95 * inch, headline[:58])
 
     # Hero image
     hero_h = 3.35 * inch if template_name != "Luxury" else 3.7 * inch
@@ -168,17 +174,38 @@ def render_pdf(
             _draw_cover_photo(c, img, x, strip_y, thumb_w, thumb_h)
 
     # Footer / CTA
-    c.setFillColor(accent)
+    c.setFillColor(ink)
     c.roundRect(0.5 * inch, 0.45 * inch, width - 1.0 * inch, 0.9 * inch, 8, fill=1, stroke=0)
+    c.setFillColor(accent)
+    c.rect(0.5 * inch, 0.45 * inch, 0.12 * inch, 0.9 * inch, fill=1, stroke=0)
+    text_x = 0.8 * inch
+    if HEADSHOT.exists():
+        try:
+            c.drawImage(
+                str(HEADSHOT),
+                0.72 * inch,
+                0.58 * inch,
+                width=0.62 * inch,
+                height=0.62 * inch,
+                mask="auto",
+            )
+            text_x = 1.5 * inch
+        except Exception:
+            text_x = 0.8 * inch
     c.setFillColor(white)
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(0.75 * inch, 0.95 * inch, listing.cta or "Schedule a private showing")
-    c.setFont("Helvetica", 9.5)
-    agent_bits = [listing.agent_name, listing.agent_phone, listing.agent_email]
-    c.drawString(0.75 * inch, 0.7 * inch, "  ·  ".join(b for b in agent_bits if b) or listing.brokerage)
-    if listing.listing_url:
-        c.setFont("Helvetica", 8)
-        c.drawString(0.75 * inch, 0.55 * inch, listing.listing_url[:90])
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(text_x, 0.98 * inch, listing.cta or "Schedule a private showing")
+    c.setFont("Helvetica", 9)
+    agent_bits = [
+        listing.agent_name or "Jason Lim",
+        listing.brokerage or "Compass",
+        listing.agent_phone,
+        listing.dre or BRAND_DRE,
+    ]
+    c.drawString(text_x, 0.76 * inch, "  ·  ".join(b for b in agent_bits if b))
+    site = listing.listing_url or "https://realtor-jason-lim.vercel.app"
+    c.setFont("Helvetica", 8)
+    c.drawString(text_x, 0.58 * inch, site[:90])
 
     if template_name == "Open House":
         c.setFillColor(HexColor("#C45C26"))

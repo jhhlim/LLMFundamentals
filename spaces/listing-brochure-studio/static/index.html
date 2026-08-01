@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jason Lim · Listing Brochure Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
+  <style>
+    :root {
+      --ink: #0B1F33;
+      --ink-2: #12304a;
+      --accent: #1F6F78;
+      --accent-deep: #024449;
+      --soft: #E8F2F3;
+      --muted: #5A6570;
+      --line: rgba(11, 31, 51, 0.12);
+      --card: rgba(255, 255, 255, 0.72);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "DM Sans", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 500px at 10% -10%, rgba(31, 111, 120, 0.18), transparent 55%),
+        linear-gradient(165deg, #E8F2F3 0%, #F7FBFC 42%, #FFFFFF 100%);
+      min-height: 100vh;
+    }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 18px 64px; }
+    header {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 22px;
+    }
+    .eyebrow {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      color: var(--accent-deep);
+      font-weight: 600;
+      font-size: 0.92rem;
+      letter-spacing: 0.02em;
+    }
+    h1 {
+      font-family: "Fraunces", Georgia, serif;
+      font-weight: 600;
+      font-size: clamp(1.8rem, 3vw, 2.4rem);
+      line-height: 1.15;
+      margin: 0;
+      letter-spacing: -0.02em;
+    }
+    .sub { color: var(--muted); max-width: 62ch; line-height: 1.5; }
+    .links a { color: var(--accent); font-weight: 600; text-decoration: none; }
+    .links a:hover { text-decoration: underline; }
+    .tabs {
+      display: flex; gap: 8px; flex-wrap: wrap;
+      margin: 18px 0 16px; border-bottom: 1px solid var(--line); padding-bottom: 10px;
+    }
+    .tab {
+      border: 0; background: transparent; color: var(--muted);
+      font: inherit; font-weight: 600; padding: 8px 12px; border-radius: 999px; cursor: pointer;
+    }
+    .tab.active { background: var(--ink); color: white; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .grid {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 18px;
+    }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+      backdrop-filter: blur(8px);
+    }
+    label { display: block; font-size: 0.84rem; font-weight: 600; margin: 10px 0 6px; }
+    input, textarea, select {
+      width: 100%; border: 1px solid var(--line); border-radius: 12px;
+      padding: 10px 12px; font: inherit; background: white; color: var(--ink);
+    }
+    textarea { min-height: 84px; resize: vertical; }
+    .row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .row-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    @media (max-width: 700px) { .row, .row-4 { grid-template-columns: 1fr 1fr; } }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+    button.btn {
+      border: 0; border-radius: 12px; padding: 11px 14px; font: inherit; font-weight: 700;
+      cursor: pointer;
+    }
+    .btn-primary { background: linear-gradient(90deg, var(--accent), var(--accent-deep)); color: white; }
+    .btn-secondary { background: var(--ink); color: white; }
+    .btn-ghost { background: white; border: 1px solid var(--line); color: var(--ink); }
+    .status {
+      min-height: 64px; white-space: pre-wrap; color: var(--ink-2);
+      background: #fff; border: 1px dashed var(--line); border-radius: 12px; padding: 12px;
+      font-size: 0.92rem; line-height: 1.45;
+    }
+    .preview {
+      width: 100%; aspect-ratio: 16/10; object-fit: cover; border-radius: 14px;
+      background: #d9e5e8; border: 1px solid var(--line);
+    }
+    .estimate-box {
+      background: linear-gradient(145deg, var(--ink), #12304a);
+      color: white; border-radius: 18px; padding: 22px;
+    }
+    .estimate-box h2 { font-family: "Fraunces", Georgia, serif; margin: 0 0 8px; }
+    .estimate-box p, .estimate-box li { color: rgba(255,255,255,0.86); line-height: 1.5; }
+    .pill {
+      display: inline-block; background: rgba(31,111,120,.25); color: #c9eef1;
+      border: 1px solid rgba(201,238,241,.35); border-radius: 999px; padding: 4px 10px;
+      font-size: 0.8rem; font-weight: 700; margin-bottom: 10px;
+    }
+    code, pre {
+      background: #0f2433; color: #d7eef1; border-radius: 12px; padding: 12px;
+      display: block; overflow: auto; font-size: 0.82rem; line-height: 1.45;
+    }
+    details { margin-top: 8px; }
+    summary { cursor: pointer; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="eyebrow">Jason Lim · Compass · DRE #02444964 · (510) 480-7191</div>
+      <h1>Listing Brochure Studio</h1>
+      <p class="sub">
+        Paste a Compass listing link or enter photos + facts — generate a branded one-page PDF,
+        then make light edits and download again.
+        <span class="links">
+          <a href="https://realtor-jason-lim.vercel.app" target="_blank" rel="noreferrer">Website</a>
+          ·
+          <a href="https://realtor-jason-lim.vercel.app/sell" target="_blank" rel="noreferrer">Sell / valuation</a>
+        </span>
+      </p>
+    </header>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="studio">Brochure Studio</button>
+      <button class="tab" data-tab="estimate">AI Estimate (Coming Soon)</button>
+      <button class="tab" data-tab="embed">Embed on website</button>
+    </div>
+
+    <section id="studio" class="panel active">
+      <div class="grid">
+        <div class="card">
+          <label>Compass listing URL</label>
+          <input id="compassUrl" placeholder="https://www.compass.com/homedetails/..." />
+          <details>
+            <summary>Compass API key (browser session only)</summary>
+            <label>RapidAPI key</label>
+            <input id="apiKey" type="password" placeholder="Paste RapidAPI key to enable Compass import" />
+            <p class="sub" style="margin:8px 0 0;font-size:0.85rem">
+              Stored in this browser only (sessionStorage). For production, prefer a server-side secret.
+            </p>
+          </details>
+          <div class="actions">
+            <button class="btn btn-secondary" id="importBtn">Import from Compass</button>
+            <button class="btn btn-primary" id="demoBtn">Load Demo Listing</button>
+          </div>
+
+          <label>Upload listing photos</label>
+          <input id="photos" type="file" accept="image/*" multiple />
+
+          <div class="row">
+            <div>
+              <label>Template</label>
+              <select id="template">
+                <option>Modern</option>
+                <option>Luxury</option>
+                <option>Open House</option>
+              </select>
+            </div>
+            <div>
+              <label>Accent color</label>
+              <input id="accent" type="color" value="#1F6F78" />
+            </div>
+          </div>
+
+          <label>Street address</label>
+          <input id="address" />
+          <div class="row-4">
+            <div><label>City</label><input id="city" /></div>
+            <div><label>State</label><input id="state" value="CA" /></div>
+            <div><label>ZIP</label><input id="zip" /></div>
+            <div><label>Price</label><input id="price" /></div>
+          </div>
+          <div class="row-4">
+            <div><label>Beds</label><input id="beds" /></div>
+            <div><label>Baths</label><input id="baths" /></div>
+            <div><label>Sq Ft</label><input id="sqft" /></div>
+            <div><label>Type</label><input id="ptype" value="Single Family" /></div>
+          </div>
+          <label>Neighborhood</label>
+          <input id="neighborhood" />
+          <label>Headline</label>
+          <input id="headline" />
+          <label>Description</label>
+          <textarea id="description"></textarea>
+          <label>Highlights (one per line)</label>
+          <textarea id="bullets"></textarea>
+          <label>Call to action</label>
+          <input id="cta" value="Schedule a private showing with Jason Lim" />
+
+          <details open>
+            <summary>Agent / branding</summary>
+            <div class="row">
+              <div><label>Agent</label><input id="agent" value="Jason Lim" /></div>
+              <div><label>Phone</label><input id="phone" value="(510) 480-7191" /></div>
+            </div>
+            <div class="row">
+              <div><label>Brokerage</label><input id="brokerage" value="Compass" /></div>
+              <div><label>License</label><input id="dre" value="DRE #02444964" /></div>
+            </div>
+            <label>Listing / site URL</label>
+            <input id="listingUrl" value="https://realtor-jason-lim.vercel.app" />
+          </details>
+
+          <div class="actions">
+            <button class="btn btn-primary" id="generateBtn">Generate brochure PDF</button>
+            <button class="btn btn-ghost" id="editBtn">Apply edits &amp; re-render</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <label>Status</label>
+          <div class="status" id="status">Load the demo listing or paste a Compass homedetails URL.</div>
+          <label style="margin-top:14px">Hero preview</label>
+          <img class="preview" id="preview" alt="Listing preview" />
+          <p class="sub" style="margin-top:12px;font-size:0.9rem">
+            Tip: after generate, tweak headline / highlights / CTA and click <strong>Apply edits</strong>.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="estimate" class="panel">
+      <div class="estimate-box">
+        <div class="pill">COMING SOON</div>
+        <h2>AI estimate engine</h2>
+        <p>
+          Planned stack: comps retrieval via MLS adapter → feature embeddings → LLM narrative with confidence bands.
+        </p>
+        <ul>
+          <li>Instant range with confidence interval</li>
+          <li>Explainable comps and adjustments</li>
+          <li>CRM lead sync on request</li>
+        </ul>
+        <div class="row" style="margin-top:14px">
+          <div>
+            <label style="color:#c9eef1">Property address</label>
+            <input id="estAddress" placeholder="San Jose, CA address" />
+          </div>
+          <div>
+            <label style="color:#c9eef1">Timeline</label>
+            <select id="estTimeline">
+              <option>0–3 months</option>
+              <option selected>3–6 months</option>
+              <option>6–12 months</option>
+              <option>flexible</option>
+            </select>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" id="estBtn">Preview placeholder</button>
+          <a class="btn btn-ghost" style="text-decoration:none;display:inline-flex;align-items:center"
+             href="https://realtor-jason-lim.vercel.app/sell" target="_blank" rel="noreferrer">
+            Request live CMA on sell page
+          </a>
+        </div>
+        <div class="status" id="estOut" style="margin-top:14px;background:rgba(255,255,255,0.08);color:#eaf7f8;border-color:rgba(255,255,255,0.2)"></div>
+      </div>
+    </section>
+
+    <section id="embed" class="panel">
+      <div class="card">
+        <h2 style="font-family:Fraunces,Georgia,serif;margin-top:0">Host this on your Vercel site</h2>
+        <p class="sub">Drop this iframe into <code style="display:inline;padding:2px 6px">/sell</code> or a tools page:</p>
+        <pre id="embedCode">&lt;iframe
+  src="https://jasonnlim-listing-brochure-studio-jason-realty.static.hf.space"
+  style="width:100%; height:980px; border:0; border-radius:12px;"
+  title="Jason Lim Listing Brochure Studio"
+&gt;&lt;/iframe&gt;</pre>
+        <p class="sub">
+          For the sell-page “AI estimate engine” block, link the Coming Soon CTA here, then swap to a live estimate endpoint when the MLS adapter ships.
+        </p>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const HOST = "compass-com-real-estate-data-api.p.rapidapi.com";
+    let photoDataUrls = [];
+
+    const DEMO = {
+      address: "1287 Willow Glen Way",
+      city: "San Jose",
+      state: "CA",
+      zip: "95125",
+      price: "$1,895,000",
+      beds: "4",
+      baths: "3",
+      sqft: "2,450",
+      ptype: "Single Family",
+      neighborhood: "Willow Glen",
+      headline: "Modern living in Willow Glen",
+      description: "Light-filled Willow Glen home with an open living plan, chef-ready kitchen, and a private backyard suited for Silicon Valley entertaining.",
+      bullets: "Open-concept living with abundant natural light\nChef's kitchen with island seating and quartz surfaces\nPrimary suite with spa bath and walk-in closet\nLandscaped backyard with covered patio",
+      cta: "Book a private tour with Jason Lim",
+      photos: [
+        "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=1200",
+        "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200",
+        "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=1200"
+      ]
+    };
+
+    // Tabs
+    document.querySelectorAll(".tab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach((b) => b.classList.remove("active"));
+        document.querySelectorAll(".panel").forEach((p) => p.classList.remove("active"));
+        btn.classList.add("active");
+        $(btn.dataset.tab).classList.add("active");
+      });
+    });
+
+    // Persist API key in session only
+    $("apiKey").value = sessionStorage.getItem("rapidapi_key") || "";
+    $("apiKey").addEventListener("change", () => {
+      sessionStorage.setItem("rapidapi_key", $("apiKey").value.trim());
+    });
+
+    function setStatus(msg) { $("status").textContent = msg; }
+
+    function fillForm(data) {
+      for (const [k, v] of Object.entries(data)) {
+        if ($(k) && typeof v === "string") $(k).value = v;
+      }
+    }
+
+    function readForm() {
+      return {
+        address: $("address").value.trim(),
+        city: $("city").value.trim(),
+        state: $("state").value.trim(),
+        zip: $("zip").value.trim(),
+        price: $("price").value.trim(),
+        beds: $("beds").value.trim(),
+        baths: $("baths").value.trim(),
+        sqft: $("sqft").value.trim(),
+        ptype: $("ptype").value.trim(),
+        neighborhood: $("neighborhood").value.trim(),
+        headline: $("headline").value.trim(),
+        description: $("description").value.trim(),
+        bullets: $("bullets").value.split("\n").map(s => s.replace(/^[-•]\s*/, "").trim()).filter(Boolean),
+        cta: $("cta").value.trim(),
+        agent: $("agent").value.trim(),
+        phone: $("phone").value.trim(),
+        brokerage: $("brokerage").value.trim(),
+        dre: $("dre").value.trim(),
+        listingUrl: $("listingUrl").value.trim(),
+        accent: $("accent").value,
+        template: $("template").value,
+      };
+    }
+
+    async function urlToDataUrl(url) {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      return await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    async function loadDemo() {
+      fillForm(DEMO);
+      setStatus("Loaded Willow Glen demo. Generate a brochure, then edit and re-render.");
+      try {
+        photoDataUrls = [];
+        for (const u of DEMO.photos) {
+          photoDataUrls.push(await urlToDataUrl(u));
+        }
+        $("preview").src = photoDataUrls[0];
+      } catch (e) {
+        setStatus("Demo text loaded. Photo fetch blocked — upload photos manually if needed.");
+      }
+    }
+
+    function money(v) {
+      if (v == null || v === "") return "";
+      if (typeof v === "string" && v.trim().startsWith("$")) return v.trim();
+      const n = Number(v);
+      return Number.isFinite(n) ? `$${Math.round(n).toLocaleString()}` : String(v);
+    }
+
+    async function importCompass() {
+      const url = $("compassUrl").value.trim();
+      const key = $("apiKey").value.trim() || sessionStorage.getItem("rapidapi_key") || "";
+      if (!url.includes("compass.com")) {
+        setStatus("Paste a full compass.com homedetails URL.");
+        return;
+      }
+      if (!key) {
+        setStatus("Add your RapidAPI key in the Compass API key section (browser session only), then import again.");
+        return;
+      }
+      sessionStorage.setItem("rapidapi_key", key);
+      setStatus("Importing from Compass…");
+      try {
+        const endpoint = `https://${HOST}/compass/property?url=${encodeURIComponent(url)}`;
+        const res = await fetch(endpoint, {
+          headers: {
+            "x-rapidapi-key": key,
+            "x-rapidapi-host": HOST,
+          }
+        });
+        const payload = await res.json();
+        if (!res.ok || payload.success === false) {
+          setStatus(`Compass API error: ${payload.error || res.status}`);
+          return;
+        }
+        const d = payload.data || {};
+        fillForm({
+          address: d.street_address || d.address || "",
+          city: d.city || "",
+          state: d.state || "",
+          zip: d.zip_code || "",
+          price: money(d.price),
+          beds: d.beds != null ? String(d.beds) : "",
+          baths: d.baths != null ? String(d.baths) : "",
+          sqft: d.sqft != null ? Number(d.sqft).toLocaleString() : "",
+          ptype: d.property_type || "Single Family",
+          neighborhood: d.neighborhood || "",
+          headline: `Welcome to ${d.neighborhood || d.city || "this home"}`,
+          description: d.description || "",
+          bullets: (d.amenities || []).slice(0, 4).join("\n"),
+          cta: "Schedule a private showing with Jason Lim",
+          listingUrl: d.url || url,
+          agent: "Jason Lim",
+          phone: "(510) 480-7191",
+          brokerage: "Compass",
+          dre: "DRE #02444964",
+        });
+        photoDataUrls = [];
+        for (const p of (d.photos || []).slice(0, 4)) {
+          try { photoDataUrls.push(await urlToDataUrl(p)); } catch (_) {}
+        }
+        if (photoDataUrls[0]) $("preview").src = photoDataUrls[0];
+        setStatus("Loaded listing from Compass. Generate the brochure, then edit as needed.");
+      } catch (e) {
+        setStatus(`Import failed: ${e.message}`);
+      }
+    }
+
+    $("photos").addEventListener("change", async (e) => {
+      photoDataUrls = [];
+      for (const file of [...e.target.files].slice(0, 4)) {
+        photoDataUrls.push(await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.readAsDataURL(file);
+        }));
+      }
+      if (photoDataUrls[0]) $("preview").src = photoDataUrls[0];
+    });
+
+    function wrap(text, max) {
+      const words = String(text || "").split(/\s+/).filter(Boolean);
+      const lines = [];
+      let cur = "";
+      for (const w of words) {
+        const next = cur ? `${cur} ${w}` : w;
+        if (next.length > max) { if (cur) lines.push(cur); cur = w; }
+        else cur = next;
+      }
+      if (cur) lines.push(cur);
+      return lines;
+    }
+
+    async function renderPdf() {
+      const f = readForm();
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ unit: "pt", format: "letter" });
+      const W = doc.internal.pageSize.getWidth();
+      const H = doc.internal.pageSize.getHeight();
+      const accent = f.accent || "#1F6F78";
+      const ink = "#0B1F33";
+      const soft = "#E8F2F3";
+
+      doc.setFillColor(soft);
+      doc.rect(0, 0, W, H, "F");
+      doc.setFillColor(ink);
+      doc.rect(0, 0, W, 78, "F");
+      doc.setFillColor(accent);
+      doc.rect(0, 78, W, 6, "F");
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.text(`${(f.agent || "Jason Lim").toUpperCase()}  ·  ${(f.brokerage || "Compass").toUpperCase()}`, 36, 28);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text(f.dre || "DRE #02444964", 36, 44);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      doc.text(f.price || "", W - 36, 34, { align: "right" });
+      doc.setFontSize(18);
+      doc.text((f.headline || "Featured Listing").slice(0, 58), 36, 66);
+
+      // Hero image
+      const heroY = 100;
+      const heroH = f.template === "Luxury" ? 250 : 230;
+      doc.setFillColor(217, 229, 232);
+      doc.rect(30, heroY, W - 60, heroH, "F");
+      if (photoDataUrls[0]) {
+        try { doc.addImage(photoDataUrls[0], "JPEG", 30, heroY, W - 60, heroH, undefined, "FAST"); } catch (_) {}
+      }
+      doc.setFillColor(accent);
+      doc.rect(30, heroY, 8, heroH, "F");
+
+      if (f.template === "Open House") {
+        doc.setFillColor(196, 92, 38);
+        doc.roundedRect(W - 150, 88, 110, 22, 4, 4, "F");
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(9);
+        doc.text("OPEN HOUSE", W - 95, 103, { align: "center" });
+      }
+
+      let y = heroY + heroH + 28;
+      doc.setTextColor(ink);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      const fullAddr = [f.address, f.city, f.state, f.zip].filter(Boolean).join(", ");
+      doc.text(fullAddr || "Address available on request", 36, y);
+      y += 16;
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(90, 101, 112);
+      doc.setFontSize(10);
+      const facts = [f.beds && `${f.beds} Beds`, f.baths && `${f.baths} Baths`, f.sqft && `${f.sqft} Sq Ft`, f.ptype].filter(Boolean).join("  ·  ");
+      doc.text(facts, 36, y);
+
+      y += 28;
+      doc.setTextColor(ink);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.text("About this home", 36, y);
+      doc.text("Highlights", W / 2 + 10, y);
+      y += 14;
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(90, 101, 112);
+      doc.setFontSize(9.5);
+      const descLines = wrap(f.description, 52).slice(0, 8);
+      descLines.forEach((line, i) => doc.text(line, 36, y + i * 13));
+      (f.bullets || []).slice(0, 5).forEach((b, i) => {
+        const by = y + i * 22;
+        doc.setFillColor(accent);
+        doc.circle(W / 2 + 16, by - 2, 2.5, "F");
+        wrap(b, 40).slice(0, 2).forEach((line, j) => {
+          doc.setTextColor(90, 101, 112);
+          doc.text(line, W / 2 + 24, by + j * 11);
+        });
+      });
+
+      // Thumbnails
+      const thumbs = photoDataUrls.slice(1, 4);
+      const ty = H - 180;
+      thumbs.forEach((img, i) => {
+        const x = 32 + i * 185;
+        doc.setFillColor(217, 229, 232);
+        doc.roundedRect(x, ty, 175, 105, 6, 6, "F");
+        try { doc.addImage(img, "JPEG", x, ty, 175, 105, undefined, "FAST"); } catch (_) {}
+      });
+
+      // Footer CTA
+      doc.setFillColor(ink);
+      doc.roundedRect(30, H - 62, W - 60, 42, 8, 8, "F");
+      doc.setFillColor(accent);
+      doc.rect(30, H - 62, 8, 42, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.text(f.cta || "Schedule a private showing", 50, H - 45);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.text([f.agent, f.brokerage, f.phone, f.dre].filter(Boolean).join("  ·  "), 50, H - 30);
+      doc.setFontSize(8);
+      doc.text((f.listingUrl || "https://realtor-jason-lim.vercel.app").slice(0, 90), 50, H - 17);
+
+      doc.save(`${(f.address || "listing").replace(/[^\w]+/g, "_").slice(0, 40)}_brochure.pdf`);
+      if (photoDataUrls[0]) $("preview").src = photoDataUrls[0];
+      setStatus(`Brochure PDF downloaded (${f.template}). Edit fields and click Apply edits to re-render.`);
+    }
+
+    $("demoBtn").addEventListener("click", loadDemo);
+    $("importBtn").addEventListener("click", importCompass);
+    $("generateBtn").addEventListener("click", renderPdf);
+    $("editBtn").addEventListener("click", renderPdf);
+    $("estBtn").addEventListener("click", () => {
+      const addr = $("estAddress").value.trim() || "your Silicon Valley home";
+      $("estOut").textContent =
+        `Coming soon — AI estimate for ${addr}.\n` +
+        `Timeline: ${$("estTimeline").value}.\n\n` +
+        "You'll see an instant range with confidence interval, explainable comps, and optional CRM lead sync.\n" +
+        "For a live CMA today, use Request Home Valuation on the sell page.";
+    });
+
+    loadDemo();
+  </script>
+</body>
+</html>

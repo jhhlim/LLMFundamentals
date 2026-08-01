@@ -1,5 +1,5 @@
 ---
-title: Listing Brochure Studio
+title: Jason Lim Listing Brochure Studio
 emoji: 🏠
 colorFrom: blue
 colorTo: green
@@ -8,36 +8,35 @@ sdk_version: 5.49.1
 app_file: app.py
 pinned: false
 license: apache-2.0
-short_description: Compass/manual listing → editable PDF brochure
+short_description: Compass listing → branded editable PDF brochure
 tags:
   - real-estate
   - brochure
+  - compass
   - gradio
 ---
 
-# Listing Brochure Studio
+# Jason Lim · Listing Brochure Studio
 
-Generate a one-page PDF brochure from:
+Compass · DRE #02444964 · [(510) 480-7191](tel:5104807191)
+
+Generate a branded one-page PDF brochure from:
 
 1. **Demo listing** (works immediately)
 2. **Manual photos + facts**
-3. **Compass listing URL** (optional — needs `RAPIDAPI_KEY` Space secret)
+3. **Compass listing URL** (`homedetails/...` via RapidAPI)
 
-## Features
-
-- Template styles: Modern / Luxury / Open House
-- Editable headline, description, highlights, CTA, agent info
-- Re-render edits without calling a model
-- Optional LLM copy polish via Hugging Face Inference (`HF_TOKEN`)
+Also includes an **AI Estimate (Coming Soon)** tab aligned with
+[realtor-jason-lim.vercel.app/sell](https://realtor-jason-lim.vercel.app/sell).
 
 ## Space secrets
 
 | Secret | Purpose |
 |---|---|
-| `RAPIDAPI_KEY` | Import Compass listing details via RapidAPI Compass Real Estate Data API |
-| `RAPIDAPI_HOST` | Optional override (default `compass-com-real-estate-data-api.p.rapidapi.com`) |
-| `HF_TOKEN` | Optional LLM polish for brochure copy |
+| `RAPIDAPI_KEY` | Compass property import |
+| `RAPIDAPI_HOST` | Optional (default `compass-com-real-estate-data-api.p.rapidapi.com`) |
+| `HF_TOKEN` | Optional LLM copy polish |
 
-## Notes
+## Brand
 
-Compass does not publish a public consumer API. URL import uses a third-party RapidAPI provider when configured. Prefer Manual/Demo modes, or a licensed MLS/IDX feed for production use.
+Accent `#1F6F78`, ink `#0B1F33`, soft `#E8F2F3` — matched to Jason Lim's Compass site.
