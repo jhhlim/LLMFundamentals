@@ -135,7 +135,8 @@ def render_pdf(
     c.drawString(0.45 * inch, height - 0.78 * inch, (listing.headline or "Featured Listing")[:62])
 
     # Full-bleed hero
-    hero_h = 3.55 * inch if template_name == "Luxury" else 3.25 * inch
+    footer_h = 0.92 * inch
+    hero_h = 3.85 * inch if template_name == "Luxury" else 3.55 * inch
     hero_y = height - header_h - hero_h
     c.setFillColor(HexColor("#C9D7DB"))
     c.rect(0, hero_y, width, hero_h, fill=1, stroke=0)
@@ -152,60 +153,63 @@ def render_pdf(
         c.drawCentredString(width - 1.15 * inch, height - header_h + 0.28 * inch, "OPEN HOUSE")
 
     # Content band
-    pad = 0.45 * inch
-    y = hero_y - 0.32 * inch
+    pad = 0.4 * inch
+    y = hero_y - 0.28 * inch
     c.setFillColor(ink)
     c.setFont("Helvetica-Bold", 13)
     c.drawString(pad, y, listing.full_address() or "Address available on request")
-    y -= 0.2 * inch
+    y -= 0.18 * inch
     c.setFillColor(muted)
     c.setFont("Helvetica", 10)
     c.drawString(pad, y, listing.facts_line())
 
-    # Two columns
-    body_top = y - 0.28 * inch
+    body_top = y - 0.24 * inch
     left_x = pad
-    right_x = width / 2 + 0.1 * inch
+    right_x = width / 2 + 0.08 * inch
     c.setFillColor(ink)
     c.setFont("Helvetica-Bold", 11)
     c.drawString(left_x, body_top, "About this home")
     c.drawString(right_x, body_top, "Highlights")
 
-    text = c.beginText(left_x, body_top - 0.2 * inch)
+    desc_lines = _wrap(listing.description or "", 48)[:6]
+    text = c.beginText(left_x, body_top - 0.18 * inch)
     text.setFont("Helvetica", 9.5)
     text.setFillColor(muted)
-    for line in _wrap(listing.description or "", 48)[:7]:
+    for line in desc_lines:
         text.textLine(line)
     c.drawText(text)
 
-    bullet_y = body_top - 0.2 * inch
-    for bullet in (listing.bullets or [])[:4]:
+    bullets = (listing.bullets or [])[:4]
+    bullet_y = body_top - 0.18 * inch
+    for bullet in bullets:
         c.setFillColor(accent)
         c.circle(right_x + 0.07 * inch, bullet_y + 0.03 * inch, 0.045 * inch, fill=1, stroke=0)
         c.setFillColor(muted)
         c.setFont("Helvetica", 9.5)
         for i, line in enumerate(_wrap(bullet, 42)[:2]):
-            c.drawString(right_x + 0.2 * inch, bullet_y - i * 0.13 * inch, line)
-        bullet_y -= 0.32 * inch
+            c.drawString(right_x + 0.2 * inch, bullet_y - i * 0.12 * inch, line)
+        bullet_y -= 0.28 * inch
 
-    # Full-width thumbnail strip + full-bleed footer
-    footer_h = 0.88 * inch
-    gap = 0.08 * inch
-    thumb_h = 1.55 * inch
-    thumb_y = footer_h + 0.18 * inch
+    content_bottom = min(
+        body_top - 0.18 * inch - len(desc_lines) * 11,
+        bullet_y + 0.08 * inch,
+    ) - 0.16 * inch
+
+    # Thumbnail strip fills remaining space to the footer (no dead band)
     extras = images[1:4]
+    thumb_top = content_bottom
+    thumb_h = max(1.35 * inch, thumb_top - footer_h)
+    thumb_y = footer_h
     n = max(len(extras), 1)
-    thumb_w = (width - gap * (n + 1)) / n
+    thumb_w = width / n
     if extras:
         for idx, img in enumerate(extras):
-            x = gap + idx * (thumb_w + gap)
+            x = idx * thumb_w
             c.setFillColor(HexColor("#C9D7DB"))
             c.rect(x, thumb_y, thumb_w, thumb_h, fill=1, stroke=0)
             _draw_cover_photo(c, img, x, thumb_y, thumb_w, thumb_h)
-    else:
-        # Keep vertical rhythm even without extras
-        c.setFillColor(HexColor("#D7E4E7"))
-        c.rect(gap, thumb_y, width - 2 * gap, thumb_h, fill=1, stroke=0)
+    elif images:
+        _draw_cover_photo(c, images[0], 0, thumb_y, width, thumb_h)
 
     # Full-bleed footer
     c.setFillColor(ink)
@@ -213,17 +217,17 @@ def render_pdf(
     c.setFillColor(accent)
     c.rect(0, 0, 0.14 * inch, footer_h, fill=1, stroke=0)
 
-    text_x = 0.45 * inch
+    text_x = 0.4 * inch
     if HEADSHOT.exists():
         try:
-            c.drawImage(str(HEADSHOT), 0.35 * inch, 0.16 * inch, width=0.56 * inch, height=0.56 * inch, mask="auto")
-            text_x = 1.1 * inch
+            c.drawImage(str(HEADSHOT), 0.3 * inch, 0.18 * inch, width=0.56 * inch, height=0.56 * inch, mask="auto")
+            text_x = 1.05 * inch
         except Exception:
-            text_x = 0.45 * inch
+            text_x = 0.4 * inch
 
     c.setFillColor(white)
     c.setFont("Helvetica-Bold", 11)
-    c.drawString(text_x, 0.58 * inch, listing.cta or "Schedule a private showing")
+    c.drawString(text_x, 0.6 * inch, listing.cta or "Schedule a private showing")
     c.setFont("Helvetica", 9)
     agent_bits = [
         listing.agent_name or "Jason Lim",
@@ -231,13 +235,12 @@ def render_pdf(
         listing.agent_phone,
         listing.dre or BRAND_DRE,
     ]
-    c.drawString(text_x, 0.38 * inch, "  ·  ".join(b for b in agent_bits if b))
+    c.drawString(text_x, 0.4 * inch, "  ·  ".join(b for b in agent_bits if b))
     site = listing.listing_url or BRAND_SITE
-    # Prefer branded site on marketing materials
     if "vercel.app" in site or not site:
         site = BRAND_SITE
     c.setFont("Helvetica", 8.5)
-    c.drawString(text_x, 0.2 * inch, site.replace("https://", "").replace("http://", "")[:70])
+    c.drawString(text_x, 0.22 * inch, site.replace("https://", "").replace("http://", "")[:70])
 
     c.showPage()
     c.save()

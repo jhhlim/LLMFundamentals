@@ -572,8 +572,10 @@
       }
 
       // Full-bleed hero (edge to edge)
+      const footerH = 68;
+      const gap = 0;
       const heroY = headerH;
-      const heroH = f.template === "Luxury" ? 268 : 246;
+      const heroH = f.template === "Luxury" ? 290 : 270;
       doc.setFillColor(201, 215, 219);
       doc.rect(0, heroY, W, heroH, "F");
       if (photoDataUrls[0]) {
@@ -587,52 +589,56 @@
 
       // Content
       const pad = 28;
-      let y = heroY + heroH + 22;
+      let y = heroY + heroH + 18;
       doc.setTextColor(ink.r, ink.g, ink.b);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(13);
       const fullAddr = [f.address, f.city, f.state, f.zip].filter(Boolean).join(", ");
       doc.text(fullAddr || "Address available on request", pad, y);
-      y += 15;
+      y += 14;
       doc.setFont("helvetica", "normal");
       doc.setTextColor(muted.r, muted.g, muted.b);
       doc.setFontSize(10);
       const facts = [f.beds && `${f.beds} Beds`, f.baths && `${f.baths} Baths`, f.sqft && `${f.sqft} Sq Ft`, f.ptype].filter(Boolean).join("  ·  ");
       doc.text(facts, pad, y);
 
-      y += 24;
+      y += 20;
       const rightX = W / 2 + 8;
       doc.setTextColor(ink.r, ink.g, ink.b);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
       doc.text("About this home", pad, y);
       doc.text("Highlights", rightX, y);
-      y += 14;
+      y += 13;
       doc.setFont("helvetica", "normal");
       doc.setTextColor(muted.r, muted.g, muted.b);
       doc.setFontSize(9.5);
-      wrap(f.description, 48).slice(0, 7).forEach((line, i) => doc.text(line, pad, y + i * 12.5));
-      (f.bullets || []).slice(0, 4).forEach((b, i) => {
-        const by = y + i * 22;
+      const descLines = wrap(f.description, 48).slice(0, 6);
+      descLines.forEach((line, i) => doc.text(line, pad, y + i * 12));
+      const bullets = (f.bullets || []).slice(0, 4);
+      bullets.forEach((b, i) => {
+        const by = y + i * 20;
         doc.setFillColor(accent.r, accent.g, accent.b);
         doc.circle(rightX + 5, by - 2, 2.4, "F");
         wrap(b, 42).slice(0, 2).forEach((line, j) => {
           doc.setTextColor(muted.r, muted.g, muted.b);
-          doc.text(line, rightX + 14, by + j * 11);
+          doc.text(line, rightX + 14, by + j * 10);
         });
       });
+      const contentBottom = Math.max(
+        y + descLines.length * 12,
+        y + bullets.length * 20
+      ) + 14;
 
-      // Full-width thumbnail strip + full-bleed footer (no dead space)
-      const footerH = 64;
-      const gap = 6;
+      // Thumbnail strip fills all remaining space down to the footer
       const thumbs = photoDataUrls.slice(1, 4);
-      const thumbH = 118;
-      const thumbY = H - footerH - gap - thumbH;
+      const thumbY = contentBottom;
+      const thumbH = Math.max(110, H - footerH - thumbY);
       const n = Math.max(thumbs.length, 1);
-      const thumbW = (W - gap * (n + 1)) / n;
+      const thumbW = W / n;
       if (thumbs.length) {
         for (let i = 0; i < thumbs.length; i++) {
-          const x = gap + i * (thumbW + gap);
+          const x = i * thumbW;
           doc.setFillColor(201, 215, 219);
           doc.rect(x, thumbY, thumbW, thumbH, "F");
           try {
@@ -640,12 +646,14 @@
             doc.addImage(tImg, "JPEG", x, thumbY, thumbW, thumbH, undefined, "FAST");
           } catch (_) {}
         }
-      } else {
-        doc.setFillColor(215, 228, 231);
-        doc.rect(gap, thumbY, W - 2 * gap, thumbH, "F");
+      } else if (photoDataUrls[0]) {
+        try {
+          const tImg = await coverImageDataUrl(photoDataUrls[0], W, thumbH);
+          doc.addImage(tImg, "JPEG", 0, thumbY, W, thumbH, undefined, "FAST");
+        } catch (_) {}
       }
 
-      // Full-bleed footer (keeps URL fully inside page)
+      // Full-bleed footer (URL fully inside page)
       doc.setFillColor(ink.r, ink.g, ink.b);
       doc.rect(0, H - footerH, W, footerH, "F");
       doc.setFillColor(accent.r, accent.g, accent.b);
@@ -653,10 +661,10 @@
       doc.setTextColor(255, 255, 255);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
-      doc.text(f.cta || "Schedule a private showing", 28, H - 42);
+      doc.text(f.cta || "Schedule a private showing", 28, H - 44);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
-      doc.text([f.agent, f.brokerage, f.phone, f.dre].filter(Boolean).join("  ·  "), 28, H - 27);
+      doc.text([f.agent, f.brokerage, f.phone, f.dre].filter(Boolean).join("  ·  "), 28, H - 28);
       doc.setFontSize(8.5);
       let site = f.listingUrl || "https://www.jasonlimrealty.com";
       if (!site || site.includes("vercel.app")) site = "https://www.jasonlimrealty.com";
