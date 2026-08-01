@@ -11,6 +11,7 @@ import { LifestyleSection } from './components/LifestyleSection'
 import { AgentSection } from './components/AgentSection'
 import { Footer } from './components/Footer'
 import { Toolbar } from './components/Toolbar'
+import { PrintBrochure } from './components/PrintBrochure'
 
 export default function App() {
   const [dark, setDark] = useState(false)
@@ -21,6 +22,15 @@ export default function App() {
     document.documentElement.classList.toggle('dark', dark)
     document.body.style.background = dark ? '#0b1f33' : '#fcfaf6'
   }, [dark])
+
+  useEffect(() => {
+    if (!listing) return
+    const prev = document.title
+    document.title = `${listing.address} · Jason Lim Compass Brochure`
+    return () => {
+      document.title = prev
+    }
+  }, [listing])
 
   if (!listing) {
     return (
@@ -56,17 +66,22 @@ export default function App() {
         </div>
       )}
 
-      <main>
-        <HeroSection listing={listing} />
-        <PropertyStats listing={listing} />
-        <ImageGallery listing={listing} />
-        <NeighborhoodSection listing={listing} />
-        <FeatureGrid listing={listing} />
-        <LifestyleSection listing={listing} />
-        <AgentSection listing={listing} />
-      </main>
+      {/* Interactive web brochure */}
+      <div className="screen-only">
+        <main>
+          <HeroSection listing={listing} />
+          <PropertyStats listing={listing} />
+          <ImageGallery listing={listing} />
+          <NeighborhoodSection listing={listing} />
+          <FeatureGrid listing={listing} />
+          <LifestyleSection listing={listing} />
+          <AgentSection listing={listing} />
+        </main>
+        <Footer />
+      </div>
 
-      <Footer />
+      {/* Dedicated Letter PDF layout */}
+      <PrintBrochure listing={listing} />
     </div>
   )
 }

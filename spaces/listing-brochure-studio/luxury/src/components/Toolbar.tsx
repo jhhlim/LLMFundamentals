@@ -23,8 +23,12 @@ export function Toolbar({
       )}
       <button
         type="button"
-        onClick={() => window.print()}
+        onClick={() => {
+          // Chromium: enable "Background graphics" in More settings for best output.
+          window.print()
+        }}
         className="inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2 text-sm font-medium text-white transition hover:bg-ink-soft"
+        title="In the print dialog, turn on Background graphics for best results"
       >
         <Printer className="h-4 w-4" />
         Print / PDF
