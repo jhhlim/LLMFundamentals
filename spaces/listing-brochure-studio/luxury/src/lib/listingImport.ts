@@ -94,7 +94,7 @@ function toNumber(value: unknown): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-function pickNumber(data: Record<string, unknown>, paths: string[], textBlobs: string[] = []): number | null {
+function pickNumber(data: Record<string, unknown>, paths: string[]): number | null {
   for (const path of paths) {
     const n = toNumber(dig(data, [path]))
     if (n != null && n > 0) return n
