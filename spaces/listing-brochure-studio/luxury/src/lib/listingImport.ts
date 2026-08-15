@@ -9,7 +9,14 @@ const HOSTS = {
 } as const
 
 const IMAGE_URL_RE = /^https?:\/\/.+\.(jpe?g|png|webp|gif)(\?|$)/i
-const CDN_HINT_RE = /(cloudfront|cloudinary|imgix|akamai|zillowstatic|photos\.zillow|cdn-|media\.|images\.|ssl\.cdn|compass\.com\/.*\.(jpe?g|png|webp)|redfin\.com\/.*photo)/i
+const CDN_HINT_RE =
+  /(photos\.compass\.com|compass\.com\/.*photo|cloudfront|cloudinary|imgix|akamai|cdn-|media\.|images\.|ssl\.cdn)/i
+
+/** Stand-in gallery when Compass RapidAPI returns no photo URLs — replace in Edit brochure. */
+export const EXAMPLE_LISTING_PHOTOS: ListingImage[] = demoListing.images.map((img, i) => ({
+  ...img,
+  alt: `Example listing photo ${i + 1} — replace with Compass photos in Edit brochure`,
+}))
 
 export function detectSource(url: string): ListingSource {
   const u = url.toLowerCase()
@@ -143,11 +150,27 @@ function prettyHomeType(raw: string): string {
 
 function looksLikeImageUrl(value: string): boolean {
   const v = value.trim()
-  if (!v.startsWith('http')) return false
+  if (!/^https?:\/\//i.test(v)) return false
+  if (/photos\.compass\.com/i.test(v)) return true
   if (IMAGE_URL_RE.test(v)) return true
   if (CDN_HINT_RE.test(v)) return true
   if (/[?&](w|width|h|height|size|fit)=/i.test(v) && /\/(photo|image|img|media|pictures?)\//i.test(v)) return true
   return false
+}
+
+/** PullAPI documents `photos: string[]` and sometimes `image_url` on Compass payloads. */
+function extractCompassPhotos(data: Record<string, unknown>): string[] {
+  const primary = [
+    ...asList(data.photos),
+    ...asList(data.image_url),
+    ...asList(data.image_urls),
+    ...asList(data.images),
+    ...asList(dig(data, ['media.photos', 'gallery', 'photoUrls', 'building.photos'])),
+  ].filter((u) => looksLikeImageUrl(u))
+
+  if (primary.length >= 2) return [...new Set(primary)]
+  // Fall back to deep walk for nested / alternate shapes
+  return [...new Set([...primary, ...extractPhotoUrls(data)])]
 }
 
 /** Deep-collect listing photo URLs from nested portal payloads. */
@@ -371,7 +394,7 @@ function withJasonBrand(listing: Listing, sourceUrl: string): Listing {
 }
 
 function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _source: ListingSource): Listing {
-  const photos = extractPhotoUrls(data)
+  const photos = extractCompassPhotos(data)
   const amenities = asList(data.amenities || data.features || data.highlights || data.key_features)
   const keyFacts = asList(data.keyFacts || data.key_facts || data.facts || data.propertyFacts)
   const address = asString(
@@ -450,7 +473,7 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _sou
   const garageValue =
     garageNum != null ? `${garageNum} Car` : asList(garageRaw)[0] || (garageRaw != null ? asString(garageRaw) : '—')
 
-  // Never silently substitute demo Unsplash photos for a live import.
+  // Photos may be empty here — importListingFromUrl applies example fallback with a notice.
   const images = buildImages(photos)
   const place = neighborhood || city || 'this neighborhood'
   const homeType = prettyHomeType(asString(dig(data, ['property_type', 'home_type', 'type', 'propertyType'])))
@@ -529,34 +552,74 @@ async function rapidGet(host: string, path: string, apiKey: string): Promise<Rec
   return json
 }
 
+async function fetchCompassRaw(url: string, apiKey: string): Promise<Record<string, unknown>> {
+  // PullAPI primary endpoint; try a couple of path aliases if the first returns sparse photos.
+  const paths = [
+    `/compass/property?url=${encodeURIComponent(url)}`,
+    `/compass/property-details?url=${encodeURIComponent(url)}`,
+    `/property?url=${encodeURIComponent(url)}`,
+  ]
+  let lastErr: Error | null = null
+  let best: Record<string, unknown> | null = null
+  let bestPhotoCount = -1
+
+  for (const path of paths) {
+    try {
+      const json = await rapidGet(HOSTS.compass, path, apiKey)
+      const data = (json.data || json.property || json) as Record<string, unknown>
+      const count = extractCompassPhotos(data).length
+      if (count > bestPhotoCount) {
+        best = data
+        bestPhotoCount = count
+      }
+      if (count >= 3) return data
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error(String(err))
+    }
+  }
+
+  if (best) return best
+  throw lastErr || new Error('Compass property fetch failed.')
+}
+
 async function fetchCompass(url: string, apiKey: string): Promise<Listing> {
-  const json = await rapidGet(HOSTS.compass, `/compass/property?url=${encodeURIComponent(url)}`, apiKey)
-  const data = (json.data || json.property || json) as Record<string, unknown>
+  const data = await fetchCompassRaw(url, apiKey)
   return normalizeGeneric(data, url, 'compass')
 }
 
-export async function importListingFromUrl(
-  url: string,
-  apiKey: string,
-): Promise<{ listing: Listing; source: ListingSource }> {
+export type ImportResult = {
+  listing: Listing
+  source: ListingSource
+  /** True when Compass API returned no photos and example stand-ins were applied. */
+  usedExamplePhotos: boolean
+  notice: string
+}
+
+export async function importListingFromUrl(url: string, apiKey: string): Promise<ImportResult> {
   const trimmed = url.trim()
   if (!trimmed) throw new Error('Paste a Compass listing URL first.')
   if (!apiKey.trim()) throw new Error('Add your RapidAPI key to import a Compass listing.')
 
   const source = detectSource(trimmed)
   if (source !== 'compass') {
-    throw new Error('Paste a Compass listing URL (compass.com/homedetails/…). Then refine photos in Edit brochure.')
+    throw new Error(
+      'This studio imports from Compass.com only (RapidAPI Compass Data API). Zillow and Redfin need their own separate APIs — paste a compass.com/homedetails/… URL, or Load Demo and replace photos in Edit brochure.',
+    )
   }
 
   let listing = await fetchCompass(trimmed, apiKey.trim())
+  let usedExamplePhotos = false
+  let notice = `Loaded from Compass via RapidAPI · ${listing.images.length} listing photo${listing.images.length === 1 ? '' : 's'} scraped.`
 
   if (!listing.images.length) {
-    // Keep empty gallery — user can upload via Edit brochure (never mix demo Unsplash).
-    listing = {
+    usedExamplePhotos = true
+    listing = syncLifestyleFromImages({
       ...listing,
-      lifestyle: listing.lifestyle.map((m) => ({ ...m, image: '' })),
-    }
+      images: EXAMPLE_LISTING_PHOTOS.map((img) => ({ ...img })),
+    })
+    notice =
+      'Compass facts loaded, but RapidAPI returned no photo URLs for this listing. Example listing photos were added — replace them in Edit brochure with the real Compass gallery.'
   }
 
-  return { listing, source }
+  return { listing, source, usedExamplePhotos, notice }
 }

@@ -116,8 +116,8 @@ export function EditFactsPanel({
             <p className="eyebrow">Edit brochure</p>
             <h3 className="editorial-display mt-2 text-3xl text-ink">Photos & facts</h3>
             <p className="mt-2 text-sm text-stone">
-              Use Compass photos when import finds them — or upload / paste image URLs here. Reorder, set the
-              cover, and fill missing stats before Print / PDF.
+              Use Compass RapidAPI photos when available — or upload / paste URLs here. If you see example
+              stand-in photos, replace them with the real Compass gallery before Print / PDF.
             </p>
           </div>
           <button type="button" onClick={onClose} className="rounded-full px-3 py-1 text-sm text-stone hover:bg-warm">

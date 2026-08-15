@@ -18,8 +18,8 @@ function hasMissingStats(listing: Listing) {
   return listing.stats.some((s) => !s.value || s.value === '—')
 }
 
-function needsEditAttention(listing: Listing) {
-  return hasMissingStats(listing) || listing.images.length === 0
+function needsEditAttention(listing: Listing, usedExamplePhotos: boolean) {
+  return hasMissingStats(listing) || listing.images.length === 0 || usedExamplePhotos
 }
 
 export default function App() {
@@ -27,8 +27,13 @@ export default function App() {
   const [listing, setListing] = useState<Listing | null>(null)
   const [source, setSource] = useState<ListingSource | null>(null)
   const [editOpen, setEditOpen] = useState(false)
+  const [usedExamplePhotos, setUsedExamplePhotos] = useState(false)
+  const [importNotice, setImportNotice] = useState('')
 
-  const missing = useMemo(() => (listing ? needsEditAttention(listing) : false), [listing])
+  const missing = useMemo(
+    () => (listing ? needsEditAttention(listing, usedExamplePhotos) : false),
+    [listing, usedExamplePhotos],
+  )
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
@@ -47,15 +52,19 @@ export default function App() {
   if (!listing) {
     return (
       <ImportPanel
-        onImported={(next, detected) => {
+        onImported={(next, detected, meta) => {
           setListing(next)
           setSource(detected)
-          setEditOpen(needsEditAttention(next))
+          setUsedExamplePhotos(Boolean(meta?.usedExamplePhotos))
+          setImportNotice(meta?.notice || '')
+          setEditOpen(needsEditAttention(next, Boolean(meta?.usedExamplePhotos)))
           window.scrollTo({ top: 0, behavior: 'smooth' })
         }}
         onDemo={() => {
           setListing(demoListing)
           setSource('unknown')
+          setUsedExamplePhotos(false)
+          setImportNotice('')
           setEditOpen(false)
           window.scrollTo({ top: 0, behavior: 'smooth' })
         }}
@@ -72,16 +81,29 @@ export default function App() {
           setListing(null)
           setSource(null)
           setEditOpen(false)
+          setUsedExamplePhotos(false)
+          setImportNotice('')
         }}
         onEditFacts={() => setEditOpen(true)}
       />
 
-      {source && source !== 'unknown' && (
-        <div className="no-print sticky top-0 z-40 border-b border-stone-light/40 bg-warm/95 px-4 py-2 text-center text-xs uppercase tracking-[0.18em] text-stone backdrop-blur">
-          Generated from {source} · Jason Lim Compass branding applied
-          {missing ? ' · Photos or stats incomplete — use Edit brochure' : ''}
+      <div className="no-print sticky top-0 z-40 space-y-0">
+        <div className="border-b border-stone-light/40 bg-warm/95 px-4 py-2 text-center text-xs uppercase tracking-[0.18em] text-stone backdrop-blur">
+          {source && source !== 'unknown'
+            ? `Generated from Compass RapidAPI · Jason Lim branding applied${
+                missing ? ' · Review photos/stats in Edit brochure' : ''
+              }`
+            : 'Demo brochure · Jason Lim Compass branding'}
         </div>
-      )}
+        <div className="border-b border-amber-200/40 bg-amber-50 px-4 py-2 text-center text-xs leading-relaxed text-ink/80">
+          Notice: this build uses the <strong>Compass.com RapidAPI</strong> only — not Zillow or Redfin (those need
+          their own APIs).
+          {usedExamplePhotos
+            ? ' Example listing photos are showing because Compass returned no photo URLs — replace them in Edit brochure.'
+            : ''}
+          {importNotice && !usedExamplePhotos ? ` ${importNotice}` : ''}
+        </div>
+      </div>
 
       <div className="screen-only">
         <main>
@@ -102,7 +124,12 @@ export default function App() {
         listing={listing}
         open={editOpen}
         onClose={() => setEditOpen(false)}
-        onSave={setListing}
+        onSave={(next) => {
+          setListing(next)
+          // If user replaced photos, clear example flag when gallery no longer matches example captions
+          const stillExample = next.images.some((img) => /example listing photo/i.test(img.alt))
+          setUsedExamplePhotos(stillExample)
+        }}
       />
     </div>
   )
