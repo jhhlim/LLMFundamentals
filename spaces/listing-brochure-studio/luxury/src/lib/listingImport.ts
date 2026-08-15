@@ -6,8 +6,6 @@ const BRAND_AGENT = demoListing.agent
 
 const HOSTS = {
   compass: 'compass-com-real-estate-data-api.p.rapidapi.com',
-  zillow: 'zillow-scraper-api.p.rapidapi.com',
-  redfin: 'redfin-scraper-api.p.rapidapi.com',
 } as const
 
 const IMAGE_URL_RE = /^https?:\/\/.+\.(jpe?g|png|webp|gif)(\?|$)/i
@@ -141,11 +139,6 @@ function prettyHomeType(raw: string): string {
   if (lower.includes('condo')) return 'condo'
   if (lower.includes('co-op') || lower.includes('coop')) return 'co-op'
   return lower
-}
-
-function extractZpid(url: string): string | null {
-  const m = url.match(/(\d{6,})_zpid/i) || url.match(/zpid[=/](\d{6,})/i)
-  return m?.[1] ?? null
 }
 
 function looksLikeImageUrl(value: string): boolean {
@@ -542,81 +535,20 @@ async function fetchCompass(url: string, apiKey: string): Promise<Listing> {
   return normalizeGeneric(data, url, 'compass')
 }
 
-async function fetchZillowPhotos(zpid: string, apiKey: string): Promise<string[]> {
-  const attempts = [`/zillow/photos/${zpid}`, `/zillow/property/${zpid}/photos`, `/photos/${zpid}`]
-  for (const path of attempts) {
-    try {
-      const json = await rapidGet(HOSTS.zillow, path, apiKey)
-      const urls = extractPhotoUrls(json)
-      if (urls.length) return urls
-    } catch {
-      // try next path
-    }
-  }
-  return []
-}
-
-async function fetchZillow(url: string, apiKey: string): Promise<Listing> {
-  const zpid = extractZpid(url)
-  if (!zpid) {
-    throw new Error('Could not find a Zillow property id (zpid) in that URL. Use a full homedetails link.')
-  }
-  const json = await rapidGet(HOSTS.zillow, `/zillow/property/${zpid}`, apiKey)
-  const data = (json.data || json) as Record<string, unknown>
-  const fromProperty = extractPhotoUrls(data)
-  if (fromProperty.length < 3) {
-    const extra = await fetchZillowPhotos(zpid, apiKey)
-    if (extra.length) {
-      ;(data as Record<string, unknown>).photos = [...fromProperty, ...extra]
-    }
-  }
-  return normalizeGeneric({ ...data, address: data.address || data.streetAddress }, url, 'zillow')
-}
-
-async function fetchRedfin(url: string, apiKey: string): Promise<Listing> {
-  const attempts = [
-    { host: HOSTS.redfin, path: `/redfin/property?url=${encodeURIComponent(url)}` },
-    { host: HOSTS.redfin, path: `/redfin/property-details?url=${encodeURIComponent(url)}` },
-    { host: 'real-time-real-estate-data.p.rapidapi.com', path: `/redfin/property-details?url=${encodeURIComponent(url)}` },
-  ]
-
-  let lastError = 'Redfin import failed.'
-  for (const attempt of attempts) {
-    try {
-      const json = await rapidGet(attempt.host, attempt.path, apiKey)
-      const data = (json.data || json.property || json) as Record<string, unknown>
-      return normalizeGeneric(data, url, 'redfin')
-    } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err)
-    }
-  }
-  throw new Error(
-    `${lastError} Subscribe to a Redfin RapidAPI product (e.g. Redfin Scraper API), or paste a Compass/Zillow link instead.`,
-  )
-}
-
 export async function importListingFromUrl(
   url: string,
   apiKey: string,
 ): Promise<{ listing: Listing; source: ListingSource }> {
   const trimmed = url.trim()
-  if (!trimmed) throw new Error('Paste a listing URL first.')
-  if (!apiKey.trim()) throw new Error('Add your RapidAPI key to import live listings.')
+  if (!trimmed) throw new Error('Paste a Compass listing URL first.')
+  if (!apiKey.trim()) throw new Error('Add your RapidAPI key to import a Compass listing.')
 
   const source = detectSource(trimmed)
-  if (source === 'realtor' || source === 'mls') {
-    throw new Error(
-      `${sourceLabel(source)} links need an MLS/IDX feed or a subscribed scraper API. For now, paste a Compass, Zillow, or Redfin listing URL.`,
-    )
-  }
-  if (source === 'unknown') {
-    throw new Error('Use a Compass, Zillow, or Redfin listing URL.')
+  if (source !== 'compass') {
+    throw new Error('Paste a Compass listing URL (compass.com/homedetails/…). Then refine photos in Edit brochure.')
   }
 
-  let listing: Listing
-  if (source === 'compass') listing = await fetchCompass(trimmed, apiKey.trim())
-  else if (source === 'zillow') listing = await fetchZillow(trimmed, apiKey.trim())
-  else listing = await fetchRedfin(trimmed, apiKey.trim())
+  let listing = await fetchCompass(trimmed, apiKey.trim())
 
   if (!listing.images.length) {
     // Keep empty gallery — user can upload via Edit brochure (never mix demo Unsplash).

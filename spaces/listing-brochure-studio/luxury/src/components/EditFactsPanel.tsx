@@ -116,8 +116,8 @@ export function EditFactsPanel({
             <p className="eyebrow">Edit brochure</p>
             <h3 className="editorial-display mt-2 text-3xl text-ink">Photos & facts</h3>
             <p className="mt-2 text-sm text-stone">
-              Use real Compass / Zillow / Redfin photos when import finds them — or upload / paste URLs here.
-              Reorder, set the cover, and fill missing stats before Print / PDF.
+              Use Compass photos when import finds them — or upload / paste image URLs here. Reorder, set the
+              cover, and fill missing stats before Print / PDF.
             </p>
           </div>
           <button type="button" onClick={onClose} className="rounded-full px-3 py-1 text-sm text-stone hover:bg-warm">
@@ -245,7 +245,7 @@ export function EditFactsPanel({
               <div className="flex flex-col gap-2 sm:flex-row">
                 <input
                   className="flex-1 rounded-xl border border-stone-light/60 bg-paper px-3 py-2 text-sm"
-                  placeholder="Paste image URL (Compass / Zillow / Redfin CDN link)"
+                  placeholder="Paste image URL (Compass CDN or MLS photo link)"
                   value={photoUrl}
                   onChange={(e) => setPhotoUrl(e.target.value)}
                   onKeyDown={(e) => {

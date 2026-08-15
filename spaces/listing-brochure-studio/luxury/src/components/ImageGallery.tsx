@@ -17,7 +17,7 @@ export function ImageGallery({ listing }: { listing: Listing }) {
         {!gallery.length && (
           <p className="mt-10 rounded-3xl border border-dashed border-stone-light/70 bg-warm/50 px-6 py-12 text-center text-stone">
             No listing photos yet — open <span className="font-semibold text-ink">Edit brochure</span> to upload
-            Compass, Zillow, or Redfin photos.
+            listing photos.
           </p>
         )}
 
