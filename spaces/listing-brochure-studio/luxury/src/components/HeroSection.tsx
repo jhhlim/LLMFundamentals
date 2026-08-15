@@ -11,14 +11,22 @@ export function HeroSection({ listing }: { listing: Listing }) {
 
   return (
     <section ref={ref} className="brochure-page relative text-white">
-      <div className="absolute inset-0 overflow-hidden">
-        <motion.img
-          style={{ y, scale }}
-          src={listing.images[0]?.src}
-          alt={listing.images[0]?.alt || listing.address}
-          className="h-full w-full object-cover"
-          loading="eager"
-        />
+      <div className="absolute inset-0 overflow-hidden bg-ink">
+        {listing.images[0]?.src ? (
+          <motion.img
+            style={{ y, scale }}
+            src={listing.images[0].src}
+            alt={listing.images[0]?.alt || listing.address}
+            className="h-full w-full object-cover"
+            loading="eager"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-ink via-ink-soft to-[#16324a]">
+            <p className="max-w-sm px-6 text-center text-sm text-white/60">
+              Add listing photos in Edit brochure — cover image appears here.
+            </p>
+          </div>
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-ink via-ink/55 to-ink/20" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(176,141,87,0.18),transparent_55%)]" />
       </div>

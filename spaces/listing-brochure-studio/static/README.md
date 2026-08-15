@@ -11,4 +11,8 @@ short_description: Import listing URL → luxury brochure + Letter PDF
 
 # Jason Lim · Luxury Listing Brochure
 
-Use **Edit facts** when portal import returns incomplete baths/sqft/lot.
+Import a Compass, Zillow, or Redfin URL for real listing photos and facts.
+
+- **Edit brochure** — upload/reorder photos, set cover, fill baths/sqft/lot
+- Neighborhood uses a **Google Map** for the listing address
+- **Print / PDF** — enable Background graphics in the print dialog

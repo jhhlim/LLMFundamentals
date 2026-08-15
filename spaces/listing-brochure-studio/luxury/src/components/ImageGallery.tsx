@@ -4,7 +4,7 @@ import { FadeIn } from './ui/FadeIn'
 import { cn } from '../lib/utils'
 
 export function ImageGallery({ listing }: { listing: Listing }) {
-  const gallery = listing.images.slice(1)
+  const gallery = listing.images.length > 1 ? listing.images.slice(1) : listing.images
 
   return (
     <section className="brochure-page bg-paper px-6 py-16 md:px-12 md:py-20 lg:px-16">
@@ -13,6 +13,13 @@ export function ImageGallery({ listing }: { listing: Listing }) {
           <p className="eyebrow">Residences in frame</p>
           <h2 className="editorial-display mt-3 text-4xl md:text-6xl">A study in light & form</h2>
         </FadeIn>
+
+        {!gallery.length && (
+          <p className="mt-10 rounded-3xl border border-dashed border-stone-light/70 bg-warm/50 px-6 py-12 text-center text-stone">
+            No listing photos yet — open <span className="font-semibold text-ink">Edit brochure</span> to upload
+            Compass, Zillow, or Redfin photos.
+          </p>
+        )}
 
         <div className="mt-12 grid auto-rows-[180px] grid-cols-2 gap-3 md:auto-rows-[220px] md:grid-cols-6 md:gap-4">
           {gallery.map((image, index) => {

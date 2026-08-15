@@ -19,13 +19,19 @@ export function LifestyleSection({ listing }: { listing: Listing }) {
                 i % 2 === 1 ? 'md:grid-cols-[0.9fr_1.1fr]' : 'md:grid-cols-[1.1fr_0.9fr]'
               }`}
             >
-              <div className={`relative overflow-hidden rounded-[2rem] ${i % 2 === 1 ? 'md:order-2' : ''}`}>
-                <img
-                  src={moment.image}
-                  alt={moment.caption}
-                  className="aspect-[16/11] w-full object-cover transition duration-700 hover:scale-[1.03]"
-                  loading="lazy"
-                />
+              <div className={`relative overflow-hidden rounded-[2rem] bg-warm ${i % 2 === 1 ? 'md:order-2' : ''}`}>
+                {moment.image ? (
+                  <img
+                    src={moment.image}
+                    alt={moment.caption}
+                    className="aspect-[16/11] w-full object-cover transition duration-700 hover:scale-[1.03]"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="flex aspect-[16/11] w-full items-center justify-center text-sm text-stone">
+                    Add photos in Edit brochure
+                  </div>
+                )}
               </div>
               <div className={i % 2 === 1 ? 'md:order-1' : ''}>
                 <p className="font-serif text-3xl leading-snug text-ink md:text-4xl md:leading-snug italic">

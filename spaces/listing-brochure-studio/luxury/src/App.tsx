@@ -18,13 +18,17 @@ function hasMissingStats(listing: Listing) {
   return listing.stats.some((s) => !s.value || s.value === '—')
 }
 
+function needsEditAttention(listing: Listing) {
+  return hasMissingStats(listing) || listing.images.length === 0
+}
+
 export default function App() {
   const [dark, setDark] = useState(false)
   const [listing, setListing] = useState<Listing | null>(null)
   const [source, setSource] = useState<ListingSource | null>(null)
   const [editOpen, setEditOpen] = useState(false)
 
-  const missing = useMemo(() => (listing ? hasMissingStats(listing) : false), [listing])
+  const missing = useMemo(() => (listing ? needsEditAttention(listing) : false), [listing])
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
@@ -46,7 +50,7 @@ export default function App() {
         onImported={(next, detected) => {
           setListing(next)
           setSource(detected)
-          setEditOpen(hasMissingStats(next))
+          setEditOpen(needsEditAttention(next))
           window.scrollTo({ top: 0, behavior: 'smooth' })
         }}
         onDemo={() => {
@@ -75,7 +79,7 @@ export default function App() {
       {source && source !== 'unknown' && (
         <div className="no-print sticky top-0 z-40 border-b border-stone-light/40 bg-warm/95 px-4 py-2 text-center text-xs uppercase tracking-[0.18em] text-stone backdrop-blur">
           Generated from {source} · Jason Lim Compass branding applied
-          {missing ? ' · Some stats missing — use Edit facts' : ''}
+          {missing ? ' · Photos or stats incomplete — use Edit brochure' : ''}
         </div>
       )}
 

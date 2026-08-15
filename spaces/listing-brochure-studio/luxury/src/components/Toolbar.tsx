@@ -30,7 +30,7 @@ export function Toolbar({
           className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-ink transition hover:bg-warm"
         >
           <Pencil className="h-4 w-4" />
-          Edit facts
+          Edit brochure
         </button>
       )}
       <button

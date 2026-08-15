@@ -10,6 +10,9 @@ const HOSTS = {
   redfin: 'redfin-scraper-api.p.rapidapi.com',
 } as const
 
+const IMAGE_URL_RE = /^https?:\/\/.+\.(jpe?g|png|webp|gif)(\?|$)/i
+const CDN_HINT_RE = /(cloudfront|cloudinary|imgix|akamai|zillowstatic|photos\.zillow|cdn-|media\.|images\.|ssl\.cdn|compass\.com\/.*\.(jpe?g|png|webp)|redfin\.com\/.*photo)/i
+
 export function detectSource(url: string): ListingSource {
   const u = url.toLowerCase()
   if (u.includes('compass.com')) return 'compass'
@@ -58,7 +61,21 @@ function asList(value: unknown): string[] {
         if (typeof item === 'string') return item
         if (item && typeof item === 'object') {
           const obj = item as Record<string, unknown>
-          return asString(obj.url || obj.href || obj.src || obj.name || obj.title || obj.text || obj.value || obj.label)
+          return asString(
+            obj.url ||
+              obj.href ||
+              obj.src ||
+              obj.originalUrl ||
+              obj.original ||
+              obj.highResUrl ||
+              obj.highRes ||
+              obj.mixedSources ||
+              obj.name ||
+              obj.title ||
+              obj.text ||
+              obj.value ||
+              obj.label,
+          )
         }
         return ''
       })
@@ -131,9 +148,111 @@ function extractZpid(url: string): string | null {
   return m?.[1] ?? null
 }
 
+function looksLikeImageUrl(value: string): boolean {
+  const v = value.trim()
+  if (!v.startsWith('http')) return false
+  if (IMAGE_URL_RE.test(v)) return true
+  if (CDN_HINT_RE.test(v)) return true
+  if (/[?&](w|width|h|height|size|fit)=/i.test(v) && /\/(photo|image|img|media|pictures?)\//i.test(v)) return true
+  return false
+}
+
+/** Deep-collect listing photo URLs from nested portal payloads. */
+export function extractPhotoUrls(data: unknown, limit = 24): string[] {
+  const found: string[] = []
+  const seen = new Set<string>()
+
+  const push = (raw: string) => {
+    let url = raw.trim().replace(/^\/\//, 'https://')
+    if (!looksLikeImageUrl(url)) return
+    // Prefer full-size when scrapers append tiny thumbs
+    url = url.replace(/[?&](w|width)=\d+/gi, '').replace(/\?$/, '')
+    if (seen.has(url)) return
+    seen.add(url)
+    found.push(url)
+  }
+
+  const walk = (node: unknown, depth: number) => {
+    if (found.length >= limit || depth > 8 || node == null) return
+    if (typeof node === 'string') {
+      push(node)
+      return
+    }
+    if (Array.isArray(node)) {
+      for (const item of node) walk(item, depth + 1)
+      return
+    }
+    if (typeof node !== 'object') return
+
+    const obj = node as Record<string, unknown>
+    const preferredKeys = [
+      'url',
+      'href',
+      'src',
+      'originalUrl',
+      'original',
+      'highResUrl',
+      'highRes',
+      'fullUrl',
+      'large',
+      'xl',
+      'photoUrl',
+      'imageUrl',
+      'image_url',
+    ]
+    for (const key of preferredKeys) {
+      const val = obj[key]
+      if (typeof val === 'string') push(val)
+    }
+
+    // Zillow mixedSources: { jpeg: [{ url, width }, ...] }
+    if (obj.mixedSources && typeof obj.mixedSources === 'object') {
+      const mixed = obj.mixedSources as Record<string, unknown>
+      for (const format of Object.values(mixed)) {
+        if (Array.isArray(format) && format.length) {
+          const largest = [...format].sort((a, b) => {
+            const wa = toNumber((a as Record<string, unknown>).width) || 0
+            const wb = toNumber((b as Record<string, unknown>).width) || 0
+            return wb - wa
+          })[0] as Record<string, unknown>
+          if (typeof largest?.url === 'string') push(largest.url)
+        }
+      }
+    }
+
+    const nestKeys = [
+      'photos',
+      'photo',
+      'images',
+      'image',
+      'image_urls',
+      'imageUrls',
+      'photoUrls',
+      'gallery',
+      'media',
+      'responsivePhotos',
+      'hugePhotos',
+      'originalPhotos',
+      'listingPhotos',
+      'propertyPhotos',
+      'pictures',
+      'thumbnails',
+      'data',
+      'property',
+      'resoFacts',
+    ]
+    for (const key of nestKeys) {
+      if (key in obj) walk(obj[key], depth + 1)
+    }
+  }
+
+  walk(data, 0)
+  return found.slice(0, limit)
+}
+
 function buildImages(urls: string[]): ListingImage[] {
-  const spans: ListingImage['span'][] = ['hero', 'wide', 'tall', 'square', 'wide', 'square']
-  return urls.slice(0, 8).map((src, i) => ({
+  const spans: ListingImage['span'][] = ['hero', 'wide', 'tall', 'square', 'wide', 'square', 'tall', 'square']
+  return urls.slice(0, 12).map((src, i) => ({
     src,
     alt: `Listing photo ${i + 1}`,
     span: spans[i] || 'square',
@@ -141,21 +260,39 @@ function buildImages(urls: string[]): ListingImage[] {
 }
 
 function featuresFromAmenities(amenities: string[], description: string): FeatureCard[] {
-  const defaults = demoListing.features
-  if (!amenities.length) return defaults
-  const mapped = amenities.slice(0, 9).map((item) => {
+  if (!amenities.length) {
+    if (!description) {
+      return [
+        { title: 'Residence', body: 'Edit brochure to add standout features from the listing.' },
+        { title: 'Kitchen', body: 'Add kitchen highlights from the MLS or portal remarks.' },
+        { title: 'Outdoor', body: 'Note patio, yard, or view details buyers should know.' },
+        { title: 'Systems', body: 'HVAC, roof, and updates — fill in from your notes.' },
+        { title: 'Location', body: 'Neighborhood access and daily conveniences.' },
+        { title: 'Presentation', body: 'Staging and photography ready for private showings.' },
+      ]
+    }
+    const sentences = description
+      .split(/(?<=[.!?])\s+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 40)
+      .slice(0, 6)
+    if (sentences.length) {
+      return sentences.map((body, i) => ({
+        title: ['Highlights', 'Spaces', 'Details', 'Living', 'Setting', 'Notes'][i] || 'Detail',
+        body,
+      }))
+    }
+  }
+  return amenities.slice(0, 9).map((item) => {
     const [title, ...rest] = item.split(':')
     return {
       title: (title || 'Feature').trim().slice(0, 40),
       body: rest.join(':').trim() || item,
     }
   })
-  while (mapped.length < 6) mapped.push(defaults[mapped.length % defaults.length])
-  if (!description) return mapped
-  return mapped
 }
 
-function placesFromSchools(schools: unknown): NeighborhoodPlace[] {
+function placesForLocation(neighborhood: string, city: string, schools: unknown): NeighborhoodPlace[] {
   const list = Array.isArray(schools) ? schools : []
   const schoolPlaces: NeighborhoodPlace[] = list.slice(0, 3).map((s) => {
     const obj = (s || {}) as Record<string, unknown>
@@ -168,8 +305,25 @@ function placesFromSchools(schools: unknown): NeighborhoodPlace[] {
       icon: 'school' as const,
     }
   })
-  const base = demoListing.places.filter((p) => p.icon !== 'school')
-  return [...schoolPlaces, ...base].slice(0, 6)
+  const place = neighborhood || city || 'the area'
+  const local: NeighborhoodPlace[] = [
+    { category: 'Dining', name: `${place} dining`, detail: 'Cafés and restaurants nearby', icon: 'dining' },
+    { category: 'Parks', name: `${place} parks`, detail: 'Green space for daily loops', icon: 'park' },
+    { category: 'Shopping', name: `${place} shopping`, detail: 'Boutiques and everyday essentials', icon: 'shop' },
+    {
+      category: 'Transit',
+      name: 'Transit & corridors',
+      detail: `Access serving ${city || place}`,
+      icon: 'transit',
+    },
+    {
+      category: 'Employment',
+      name: 'Job centers',
+      detail: `Commute options from ${city || place}`,
+      icon: 'tech',
+    },
+  ]
+  return [...schoolPlaces, ...local].slice(0, 6)
 }
 
 function lifestyleFromImages(images: ListingImage[], neighborhood: string, city: string): Listing['lifestyle'] {
@@ -177,13 +331,41 @@ function lifestyleFromImages(images: ListingImage[], neighborhood: string, city:
   const quotes = [
     `Morning light settles across the rooms in ${place}.`,
     `Evenings that begin steps from the best of ${place}.`,
-    `A home composed for how Silicon Valley actually lives.`,
+    `A home composed for how life actually feels in ${place}.`,
   ]
+  const fallback = images[0]?.src || ''
   return [0, 1, 2].map((i) => ({
     quote: quotes[i],
-    image: images[i + 1]?.src || images[0]?.src || demoListing.images[0].src,
+    image: images[i + 1]?.src || fallback,
     caption: images[i + 1]?.alt || 'Residence moment',
   }))
+}
+
+/** Keep lifestyle moments aligned with current listing photos after edits. */
+export function syncLifestyleFromImages(listing: Listing): Listing {
+  const images = listing.images
+  if (!images.length) return listing
+  return {
+    ...listing,
+    lifestyle: listing.lifestyle.map((m, i) => ({
+      ...m,
+      image: images[i + 1]?.src || images[0]?.src || m.image,
+    })),
+  }
+}
+
+export function fullAddress(listing: Pick<Listing, 'address' | 'city' | 'state' | 'zip'>): string {
+  return [listing.address, listing.city, listing.state, listing.zip].filter(Boolean).join(', ')
+}
+
+/** Google Maps embed URL — optional Embed API key in sessionStorage (`google_maps_embed_key`). */
+export function googleMapsEmbedUrl(address: string): string {
+  const q = address.trim() || 'United States'
+  const key = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('google_maps_embed_key') || '' : ''
+  if (key.trim()) {
+    return `https://www.google.com/maps/embed/v1/place?key=${encodeURIComponent(key.trim())}&q=${encodeURIComponent(q)}&zoom=15`
+  }
+  return `https://www.google.com/maps?q=${encodeURIComponent(q)}&z=15&output=embed`
 }
 
 function withJasonBrand(listing: Listing, sourceUrl: string): Listing {
@@ -196,13 +378,7 @@ function withJasonBrand(listing: Listing, sourceUrl: string): Listing {
 }
 
 function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _source: ListingSource): Listing {
-  const photos = [
-    ...asList(data.photos),
-    ...asList(data.image_urls),
-    ...asList(data.images),
-    ...asList(data.image_url),
-    ...asList(dig(data, ['media.photos', 'gallery', 'photoUrls'])),
-  ]
+  const photos = extractPhotoUrls(data)
   const amenities = asList(data.amenities || data.features || data.highlights || data.key_features)
   const keyFacts = asList(data.keyFacts || data.key_facts || data.facts || data.propertyFacts)
   const address = asString(
@@ -221,8 +397,15 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _sou
     pickNumber(data, ['beds', 'bedrooms', 'beds_total', 'numBedrooms', 'bedroomsTotal', 'property.beds']) ??
     matchFromText(textBlobs, [/(\d+(?:\.\d+)?)\s*(?:bed|br|bd)\b/i, /bedrooms?\s*[:#]?\s*(\d+(?:\.\d+)?)/i])
 
-  // Compass often splits full/half baths or nests under size / details.
-  const bathsFull = pickNumber(data, ['baths', 'bathrooms', 'baths_total', 'numBathrooms', 'bathroomsTotal', 'bathsFull', 'full_baths'])
+  const bathsFull = pickNumber(data, [
+    'baths',
+    'bathrooms',
+    'baths_total',
+    'numBathrooms',
+    'bathroomsTotal',
+    'bathsFull',
+    'full_baths',
+  ])
   const bathsHalf = pickNumber(data, ['bathsHalf', 'half_baths', 'bathroomsHalf', 'partialBaths'])
   let baths = bathsFull
   if (bathsFull != null && bathsHalf != null) baths = bathsFull + bathsHalf * 0.5
@@ -242,10 +425,7 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _sou
       'size.livingArea',
       'property.livingArea',
     ]) ??
-    matchFromText(textBlobs, [
-      /([\d,]+)\s*(?:sq\.?\s*ft|sqft|square feet)/i,
-      /living area\s*[:#]?\s*([\d,]+)/i,
-    ])
+    matchFromText(textBlobs, [/([\d,]+)\s*(?:sq\.?\s*ft|sqft|square feet)/i, /living area\s*[:#]?\s*([\d,]+)/i])
 
   let lot =
     pickNumber(data, [
@@ -259,7 +439,6 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _sou
       'property.lotSize',
     ]) ?? matchFromText(textBlobs, [/([\d,]+)\s*(?:lot|lot size)/i, /lot size\s*[:#]?\s*([\d,.]+)\s*(?:sq|sf|acres?)?/i])
 
-  // Lot sometimes comes in acres from Compass/MLS.
   const lotAcres =
     pickNumber(data, ['lot_acres', 'lotAcres', 'acres', 'lotSizeAcres']) ??
     matchFromText(textBlobs, [/([\d.]+)\s*acres?/i])
@@ -278,11 +457,15 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _sou
   const garageValue =
     garageNum != null ? `${garageNum} Car` : asList(garageRaw)[0] || (garageRaw != null ? asString(garageRaw) : '—')
 
-  const images = buildImages(photos.length ? photos : demoListing.images.map((i) => i.src))
+  // Never silently substitute demo Unsplash photos for a live import.
+  const images = buildImages(photos)
   const place = neighborhood || city || 'this neighborhood'
   const homeType = prettyHomeType(asString(dig(data, ['property_type', 'home_type', 'type', 'propertyType'])))
+  const regionHint = state && ['CA', 'California'].includes(state) ? 'Bay Area' : city || place
 
   const fmtSqft = (n: number | null) => (n == null ? '—' : `${Math.round(n).toLocaleString()} SF`)
+  const walkRaw = Number(data.walk_score || data.walkScore || dig(data, ['walkScore.walkscore']))
+  const walkScore = Number.isFinite(walkRaw) && walkRaw > 0 ? walkRaw : 0
 
   return withJasonBrand(
     {
@@ -294,7 +477,7 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _sou
       price: price || 'Price on request',
       status: asString(data.status || data.listing_status, 'Offered exclusively').replace(/_/g, ' '),
       headline: `Modern living in ${place}`,
-      subhead: `A refined ${homeType} presentation for Silicon Valley sellers and buyers.`,
+      subhead: `A refined ${homeType} presentation for ${regionHint} sellers and buyers.`,
       about:
         description ||
         `Discover this residence in ${place}. Thoughtful spaces, standout presentation, and a setting that makes everyday life feel considered — prepared as a private listing brochure by Jason Lim, Compass.`,
@@ -310,9 +493,9 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _sou
       ],
       images,
       features: featuresFromAmenities(amenities, description),
-      neighborhoodIntro: `Exploring ${place}${city ? ` in ${city}` : ''} — schools, daily conveniences, and the corridors that connect to Silicon Valley’s defining campuses.`,
-      places: placesFromSchools(data.schools),
-      walkScore: Number(data.walk_score || data.walkScore) || demoListing.walkScore,
+      neighborhoodIntro: `Exploring ${place}${city ? ` in ${city}` : ''} — schools, daily conveniences, and the corridors that connect everyday life.`,
+      places: placesForLocation(neighborhood, city, data.schools),
+      walkScore,
       lifestyle: lifestyleFromImages(images, neighborhood, city),
       agent: BRAND_AGENT,
     },
@@ -355,8 +538,22 @@ async function rapidGet(host: string, path: string, apiKey: string): Promise<Rec
 
 async function fetchCompass(url: string, apiKey: string): Promise<Listing> {
   const json = await rapidGet(HOSTS.compass, `/compass/property?url=${encodeURIComponent(url)}`, apiKey)
-  const data = (json.data || json) as Record<string, unknown>
+  const data = (json.data || json.property || json) as Record<string, unknown>
   return normalizeGeneric(data, url, 'compass')
+}
+
+async function fetchZillowPhotos(zpid: string, apiKey: string): Promise<string[]> {
+  const attempts = [`/zillow/photos/${zpid}`, `/zillow/property/${zpid}/photos`, `/photos/${zpid}`]
+  for (const path of attempts) {
+    try {
+      const json = await rapidGet(HOSTS.zillow, path, apiKey)
+      const urls = extractPhotoUrls(json)
+      if (urls.length) return urls
+    } catch {
+      // try next path
+    }
+  }
+  return []
 }
 
 async function fetchZillow(url: string, apiKey: string): Promise<Listing> {
@@ -366,11 +563,17 @@ async function fetchZillow(url: string, apiKey: string): Promise<Listing> {
   }
   const json = await rapidGet(HOSTS.zillow, `/zillow/property/${zpid}`, apiKey)
   const data = (json.data || json) as Record<string, unknown>
+  const fromProperty = extractPhotoUrls(data)
+  if (fromProperty.length < 3) {
+    const extra = await fetchZillowPhotos(zpid, apiKey)
+    if (extra.length) {
+      ;(data as Record<string, unknown>).photos = [...fromProperty, ...extra]
+    }
+  }
   return normalizeGeneric({ ...data, address: data.address || data.streetAddress }, url, 'zillow')
 }
 
 async function fetchRedfin(url: string, apiKey: string): Promise<Listing> {
-  // PullAPI / Redfin scrapers vary; try URL detail first, then common alternates.
   const attempts = [
     { host: HOSTS.redfin, path: `/redfin/property?url=${encodeURIComponent(url)}` },
     { host: HOSTS.redfin, path: `/redfin/property-details?url=${encodeURIComponent(url)}` },
@@ -392,7 +595,10 @@ async function fetchRedfin(url: string, apiKey: string): Promise<Listing> {
   )
 }
 
-export async function importListingFromUrl(url: string, apiKey: string): Promise<{ listing: Listing; source: ListingSource }> {
+export async function importListingFromUrl(
+  url: string,
+  apiKey: string,
+): Promise<{ listing: Listing; source: ListingSource }> {
   const trimmed = url.trim()
   if (!trimmed) throw new Error('Paste a listing URL first.')
   if (!apiKey.trim()) throw new Error('Add your RapidAPI key to import live listings.')
@@ -407,7 +613,18 @@ export async function importListingFromUrl(url: string, apiKey: string): Promise
     throw new Error('Use a Compass, Zillow, or Redfin listing URL.')
   }
 
-  if (source === 'compass') return { listing: await fetchCompass(trimmed, apiKey.trim()), source }
-  if (source === 'zillow') return { listing: await fetchZillow(trimmed, apiKey.trim()), source }
-  return { listing: await fetchRedfin(trimmed, apiKey.trim()), source }
+  let listing: Listing
+  if (source === 'compass') listing = await fetchCompass(trimmed, apiKey.trim())
+  else if (source === 'zillow') listing = await fetchZillow(trimmed, apiKey.trim())
+  else listing = await fetchRedfin(trimmed, apiKey.trim())
+
+  if (!listing.images.length) {
+    // Keep empty gallery — user can upload via Edit brochure (never mix demo Unsplash).
+    listing = {
+      ...listing,
+      lifestyle: listing.lifestyle.map((m) => ({ ...m, image: '' })),
+    }
+  }
+
+  return { listing, source }
 }
