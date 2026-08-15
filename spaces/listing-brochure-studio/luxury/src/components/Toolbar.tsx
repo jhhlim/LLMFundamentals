@@ -1,13 +1,15 @@
-import { Moon, Printer, Sun, Plus } from 'lucide-react'
+import { Moon, Printer, Sun, Plus, Pencil } from 'lucide-react'
 
 export function Toolbar({
   dark,
   onToggleTheme,
   onNewListing,
+  onEditFacts,
 }: {
   dark: boolean
   onToggleTheme: () => void
   onNewListing?: () => void
+  onEditFacts?: () => void
 }) {
   return (
     <div className="no-print fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-stone-light/50 bg-paper/90 px-3 py-2 shadow-[0_20px_60px_-24px_rgba(11,31,51,0.55)] backdrop-blur-md">
@@ -21,12 +23,19 @@ export function Toolbar({
           New URL
         </button>
       )}
+      {onEditFacts && (
+        <button
+          type="button"
+          onClick={onEditFacts}
+          className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm text-ink transition hover:bg-warm"
+        >
+          <Pencil className="h-4 w-4" />
+          Edit facts
+        </button>
+      )}
       <button
         type="button"
-        onClick={() => {
-          // Chromium: enable "Background graphics" in More settings for best output.
-          window.print()
-        }}
+        onClick={() => window.print()}
         className="inline-flex items-center gap-2 rounded-full bg-ink px-4 py-2 text-sm font-medium text-white transition hover:bg-ink-soft"
         title="In the print dialog, turn on Background graphics for best results"
       >

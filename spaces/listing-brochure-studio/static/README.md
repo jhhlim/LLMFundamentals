@@ -11,4 +11,4 @@ short_description: Import listing URL → luxury brochure + Letter PDF
 
 # Jason Lim · Luxury Listing Brochure
 
-Print tip: in Chrome print dialog, enable **Background graphics**.
+Use **Edit facts** when portal import returns incomplete baths/sqft/lot.
