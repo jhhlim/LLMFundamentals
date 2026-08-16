@@ -1,78 +1,44 @@
-# Project Notes Demo — 10-Minute VC Pitch (Speaker Script)
+# Project Notes Demo — 4-Slide Pitch (Speaker Script)
 
-**Open these (repo root) — Keynote often rejects python-pptx files:**
-
-| File | Use |
-|------|-----|
-| **`Jason_Lim_Project_Notes_Demo_10min_VC_Pitch.pdf`** | **Best for Mac/iPad** — open in Preview or Keynote (File → Open) |
-| `Jason_Lim_Project_Notes_Demo_10min_VC_Pitch.html` | Safari backup → Print → PDF |
-| `Jason_Lim_Project_Notes_Demo_10min_VC_Pitch.pptx` | Simplified PowerPoint (may still fail in Keynote) |
+**Prefer PDF for Keynote/iPad:** `Jason_Lim_Project_Notes_Demo_10min_VC_Pitch.pdf`  
+Also: `.html` (Safari) · simplified `.pptx` (PowerPoint; Keynote may still reject)  
 
 **Live demo:** https://jasonnlim-listing-brochure-studio-jason-realty.static.hf.space  
-**Hub:** https://huggingface.co/spaces/jasonnlim/listing-brochure-studio-jason-realty
 
-> If GitHub download of `.pptx` still says “file format is invalid,” you likely got a broken download — use the **PDF** instead.  
-
-Tone: **excited, confident, product-first.** You’re a Compass agent who shipped.
+Tone: **excited, product-first.** No LangSmith live demo — that’s expansion/debug only.
 
 ---
 
-## Timing map (~10:00)
+## Timing (~10 min)
 
-| Time | Slide | Move |
-|------|-------|------|
-| 0:00–0:45 | 1 Title | Hook hard — “brochure in seconds” |
-| 0:45–1:45 | 2 Problem | Word/Canva chaos; you’re in the pain |
-| 1:45–2:45 | 3 Product | URL → brochure → Edit → PDF |
-| **2:45–5:30** | **4 Live HF demo** | **Screen-share Space (longest block)** |
-| 5:30–6:15 | 5 Architecture | Fast stack overview |
-| **6:15–7:15** | **6 LangSmith trajectory** | **Trace the run path** |
-| 7:15–8:00 | 7 Why win | Agent distribution moat |
-| **8:00–8:50** | **8 Expand project** | Near-term / Product / Scale |
-| 8:50–9:20 | 9 What’s live | Proof, not vapor |
-| 9:20–9:45 | 10 Ask | Partners, LangSmith, advisors |
-| 9:45–10:00 | 11 Close | Q&A; invite LangSmith walkthrough |
+| Time | Slide | Focus |
+|------|-------|--------|
+| 0:00–1:30 | 1 Hook | Pain + product + who you are |
+| **1:30–7:00** | **2 Live HF demo** | **Screen-share Space (longest)** |
+| 7:00–9:00 | 3 Why + expand | Moat + LangSmith as *future debug* |
+| 9:00–10:00 | 4 Close | Ask + Q&A |
 
 ---
 
-## Demo checklist (Slide 4)
+## Slide 1 — Hook
+“Sellers want magazine marketing. Agents drown in Canva. I built a live HF Space: Compass URL → luxury brochure → edit → PDF.”
 
-1. Hard-refresh HF Space.
-2. Prefer **Compass URL + RapidAPI key**; if quota is tight → **Load Willow Glen demo**.
-3. Scroll hero → gallery → **Google Map** → agent CTA.
-4. Open **Edit brochure** (photos + facts).
-5. **Print / PDF** → remind: enable **Background graphics**.
-6. Mention notice: **Compass RapidAPI only** (Zillow/Redfin need their own APIs).
+## Slide 2 — Demo (heart of the talk)
+1. Hard-refresh Space  
+2. Compass URL + RapidAPI **or** Willow Glen demo  
+3. Scroll brochure + Google Map  
+4. Edit brochure (photos/facts)  
+5. Print/PDF tip: Background graphics  
+6. Honesty: Compass RapidAPI only  
 
----
+## Slide 3 — Why + expand
+- **Why:** listing-appointment distribution, workflow wedge, licensed Compass agent, shipped product  
+- **Expand (not demoing today):** **LangSmith** to analyze brochure runs — why photos/details didn’t import, empty fields, scrape gaps; then LLM polish / MLS / seller links  
+- **Ask:** design partners + advisors  
 
-## LangSmith talking points (Slide 6)
-
-Trajectory to draw on whiteboard or in LangSmith UI:
-
-`Intake → Scrape (Compass) → Extract photos/facts → Compose brochure (+ LLM polish) → Human edit → Export PDF`
-
-What you show / claim:
-
-- Debug empty photo arrays and failed scrapes in the trace
-- Compare demo vs live URL trajectories
-- Eval loop when expanding to LangGraph multi-step copy agents
-
-*If LangSmith isn’t wired live yet:* say “instrumentation plan — next sprint wires compose/LLM steps into LangSmith projects with `@traceable` / LangChain callbacks.”
+## Slide 4 — Close
+“Generate the next listing before the open house.” Leave Space open for questions.
 
 ---
 
-## Expansion slide (Slide 8) — one clear story
-
-1. **Near-term:** LangGraph + LangSmith traces, LLM polish, MLS batch  
-2. **Product:** AI Estimate narrative, seller portal, team brand kits  
-3. **Scale:** Official APIs, mobile capture packs, template marketplace  
-
-Closer line: **“Brochure is the beachhead. Listing OS is the company.”**
-
----
-
-## Contact
-
-Jason Lim · Compass · DRE #02444964  
-jason.lim@compass.com · (510) 480-7191 · https://www.jasonlimrealty.com
+Jason Lim · Compass · DRE #02444964 · jason.lim@compass.com · (510) 480-7191
