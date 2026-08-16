@@ -1,12 +1,17 @@
 # Project Notes Demo — 10-Minute VC Pitch (Speaker Script)
 
-**Files (repo root):**
-- `Jason_Lim_Project_Notes_Demo_10min_VC_Pitch.pptx` — regenerated for Keynote/PowerPoint
-- `Jason_Lim_Project_Notes_Demo_10min_VC_Pitch_Keynote.pptx` — same deck (Keynote-friendly copy)
-- `Jason_Lim_Project_Notes_Demo_10min_VC_Pitch.html` — open in Safari if Keynote still fails (Print → PDF)
+**Open these (repo root) — Keynote often rejects python-pptx files:**
+
+| File | Use |
+|------|-----|
+| **`Jason_Lim_Project_Notes_Demo_10min_VC_Pitch.pdf`** | **Best for Mac/iPad** — open in Preview or Keynote (File → Open) |
+| `Jason_Lim_Project_Notes_Demo_10min_VC_Pitch.html` | Safari backup → Print → PDF |
+| `Jason_Lim_Project_Notes_Demo_10min_VC_Pitch.pptx` | Simplified PowerPoint (may still fail in Keynote) |
 
 **Live demo:** https://jasonnlim-listing-brochure-studio-jason-realty.static.hf.space  
-**Hub:** https://huggingface.co/spaces/jasonnlim/listing-brochure-studio-jason-realty  
+**Hub:** https://huggingface.co/spaces/jasonnlim/listing-brochure-studio-jason-realty
+
+> If GitHub download of `.pptx` still says “file format is invalid,” you likely got a broken download — use the **PDF** instead.  
 
 Tone: **excited, confident, product-first.** You’re a Compass agent who shipped.
 
