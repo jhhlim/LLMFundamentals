@@ -23,8 +23,10 @@ Numbers are **illustrative pitch math** (not audited) — say that once, then ow
 We compress that to **minutes**: paste Compass URL → branded template → edit gaps → PDF.  
 **Investor line:** turn marketing labor into productized margin.”
 
-### Slide 2 — Demo
-Show the Space. Narrate: “This is the $150–$600 turning into a workflow.”
+### Slide 2 — Product (audience-facing; no speaker notes on the slide)
+Slide shows the 5-step product story for investors.  
+**You** screen-share the HF Space while this slide is up (or right after): paste URL → brochure → edit → PDF.  
+Off-slide line: “This is the $150–$600 turning into a workflow.”
 
 ### Slide 3 — Economics + expand
 “Example: 8 listings/mo × 3 hrs × $100/hr ≈ **$2,400/mo** unlocked per agent — teams multiply.  
