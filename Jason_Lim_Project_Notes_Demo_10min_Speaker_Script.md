@@ -12,7 +12,7 @@ Numbers are **illustrative pitch math** (not audited) — say that once, then ow
 | Time | Slide | Focus |
 |------|-------|--------|
 | 0:00–2:00 | 1 Hook | Hours + $$ burned in Canva vs productized save |
-| 2:00–7:00 | 2 Demo | Prove minutes replace hours on HF Space |
+| 2:00–7:00 | 2 Product | Audience sees the workflow; you screen-share Space |
 | 7:00–9:00 | 3 Why + architecture | Unit economics + Observe→Distribute |
 | 9:00–10:00 | 4 Close | Margin + ask |
 
