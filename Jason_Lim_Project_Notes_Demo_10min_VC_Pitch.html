@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jason Lim — Project Notes Demo (10 min VC Pitch)</title>
+  <style>
+    :root {
+      --ink: #0B1F33;
+      --teal: #1F6F78;
+      --gold: #B08D57;
+      --paper: #FCFAF6;
+      --muted: #5C6B7A;
+      --light: #E8F2F3;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Georgia, "Times New Roman", serif;
+      background: #1a1a1a;
+      color: var(--ink);
+    }
+    .deck { max-width: 1100px; margin: 0 auto; padding: 24px 16px 80px; }
+    .hint {
+      color: #ccc; font-family: system-ui, sans-serif; font-size: 14px;
+      margin-bottom: 16px; line-height: 1.5;
+    }
+    .hint a { color: var(--gold); }
+    .slide {
+      background: var(--paper);
+      border-radius: 16px;
+      padding: 48px 56px;
+      margin-bottom: 28px;
+      min-height: 520px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.35);
+      position: relative;
+      overflow: hidden;
+    }
+    .slide.dark { background: var(--ink); color: #fff; }
+    .slide::before {
+      content: "";
+      position: absolute; left: 0; top: 0; bottom: 0; width: 6px;
+      background: var(--gold);
+    }
+    .eyebrow {
+      font-family: system-ui, sans-serif;
+      font-size: 12px; letter-spacing: .22em; text-transform: uppercase;
+      color: var(--teal); font-weight: 700; margin-bottom: 12px;
+    }
+    .dark .eyebrow { color: var(--gold); }
+    h1 { font-size: 42px; line-height: 1.15; margin: 0 0 16px; font-weight: 700; }
+    h2 { font-size: 34px; line-height: 1.2; margin: 0 0 14px; }
+    p, li { font-family: system-ui, -apple-system, sans-serif; font-size: 17px; line-height: 1.5; color: var(--muted); }
+    .dark p, .dark li { color: var(--light); }
+    ul { padding-left: 1.2em; }
+    li { margin: 8px 0; }
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 24px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 24px; }
+    .card {
+      background: #fff; border-radius: 12px; padding: 20px;
+      border-top: 4px solid var(--gold);
+    }
+    .dark .card { background: rgba(255,255,255,.06); border-top-color: var(--teal); }
+    .card h3 { margin: 0 0 8px; font-size: 20px; color: var(--ink); }
+    .dark .card h3 { color: #fff; }
+    .card p { margin: 0; font-size: 15px; }
+    .traj { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 24px 0; }
+    .traj div {
+      background: #fff; border-radius: 10px; padding: 12px 10px;
+      border-top: 3px solid var(--teal); font-family: system-ui, sans-serif;
+    }
+    .traj strong { display: block; font-size: 13px; color: var(--ink); margin-bottom: 6px; }
+    .traj span { font-size: 12px; color: var(--muted); }
+    .numrow { margin: 18px 0; padding: 16px 20px; background: #fff; border-radius: 12px; }
+    .numrow strong { color: var(--gold); font-family: Georgia, serif; margin-right: 12px; }
+    .footer {
+      position: absolute; left: 56px; right: 56px; bottom: 22px;
+      font-family: system-ui, sans-serif; font-size: 12px; color: var(--muted);
+      display: flex; justify-content: space-between;
+    }
+    .dark .footer { color: #9AA8B5; }
+    @media (max-width: 800px) {
+      .grid3, .traj { grid-template-columns: 1fr; }
+      .slide { padding: 28px 24px 56px; }
+      h1 { font-size: 30px; } h2 { font-size: 24px; }
+    }
+    @media print {
+      body { background: #fff; }
+      .hint { display: none; }
+      .slide { box-shadow: none; break-after: page; border: 1px solid #ddd; }
+    }
+  </style>
+</head>
+<body>
+  <div class="deck">
+    <p class="hint">
+      Browser backup if Keynote won’t open the .pptx — open this file in Safari/Chrome, or Print → PDF.<br />
+      Live demo: <a href="https://jasonnlim-listing-brochure-studio-jason-realty.static.hf.space">HF Space</a>
+      · Script: <code>Jason_Lim_Project_Notes_Demo_10min_Speaker_Script.md</code>
+    </p>
+
+    <section class="slide dark">
+      <div class="eyebrow">Project notes demo · 10 minutes</div>
+      <h1>Luxury Listing Brochures,<br />Generated in Seconds.</h1>
+      <p>An AI product for Silicon Valley sellers — live on Hugging Face, instrumented with LangSmith, built by a Compass REALTOR® who lives the workflow.</p>
+      <p style="color:var(--gold);font-weight:600;margin-top:28px;">Jason Lim · Compass · jasonlimrealty.com · Pitch to investors + class demo</p>
+      <div class="footer"><span>Jason Lim · Listing Brochure Studio · DRE #02444964</span><span>1 / 11</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">The problem</div>
+      <h2>Luxury marketing is stuck in Word docs and Canva chaos.</h2>
+      <div class="grid3">
+        <div class="card"><h3>Slow</h3><p>Agents spend hours assembling photos, facts, and copy for every listing brochure.</p></div>
+        <div class="card"><h3>Inconsistent</h3><p>Brand voice drifts. One listing looks premium — the next looks like a flyer.</p></div>
+        <div class="card"><h3>Not productized</h3><p>No URL → brochure pipeline. No observability. No scale.</p></div>
+      </div>
+      <div class="footer"><span>Jason Lim · Listing Brochure Studio · DRE #02444964</span><span>2 / 11</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">The product</div>
+      <h2>URL in. Luxury brochure out.</h2>
+      <p>Listing Brochure Studio — live Hugging Face Space for Jason Lim Realty.</p>
+      <div class="numrow"><strong>01</strong> Paste Compass URL — RapidAPI scrapes photos + facts</div>
+      <div class="numrow"><strong>02</strong> Compose brochure — editorial layout, map, lifestyle, agent CTA</div>
+      <div class="numrow"><strong>03</strong> Edit &amp; Print/PDF — swap photos, fill facts, export Letter PDF</div>
+      <div class="footer"><span>Jason Lim · Listing Brochure Studio · DRE #02444964</span><span>3 / 11</span></div>
+    </section>
+
+    <section class="slide dark">
+      <div class="eyebrow">Live demo · Hugging Face</div>
+      <h2>Watch it happen on the Space.</h2>
+      <p><a href="https://jasonnlim-listing-brochure-studio-jason-realty.static.hf.space" style="color:var(--gold)">jasonnlim-listing-brochure-studio-jason-realty.static.hf.space</a></p>
+      <ul>
+        <li>Paste a compass.com/homedetails/… URL + RapidAPI key</li>
+        <li>Generate → Compass photos + facts compose the magazine brochure</li>
+        <li>Scroll: Hero → Stats → Gallery → Google Map → Features → Agent CTA</li>
+        <li>Edit brochure: reorder / upload photos, fill baths &amp; sqft</li>
+        <li>Print / PDF — enable Background graphics</li>
+      </ul>
+      <div class="footer"><span>Jason Lim · Listing Brochure Studio · DRE #02444964</span><span>4 / 11</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Architecture</div>
+      <h2>Built to ship. Built to observe.</h2>
+      <div class="grid3">
+        <div class="card"><h3>Frontend</h3><p>React + Vite + TS · Tailwind · Framer Motion · Print CSS · Edit panel</p></div>
+        <div class="card"><h3>Data / APIs</h3><p>Compass RapidAPI · photo extraction · Google Maps · example fallback</p></div>
+        <div class="card"><h3>Platform</h3><p>HF Space (static) · GitHub · session API keys · Jason Lim brand</p></div>
+      </div>
+      <div class="footer"><span>Jason Lim · Listing Brochure Studio · DRE #02444964</span><span>5 / 11</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Observability · LangSmith</div>
+      <h2>Every brochure run = a trajectory you can debug.</h2>
+      <div class="traj">
+        <div><strong>1 Intake</strong><span>URL + key</span></div>
+        <div><strong>2 Scrape</strong><span>Compass JSON</span></div>
+        <div><strong>3 Extract</strong><span>Photos · facts</span></div>
+        <div><strong>4 Compose</strong><span>Brochure + LLM</span></div>
+        <div><strong>5 Human edit</strong><span>Overrides</span></div>
+        <div><strong>6 Export</strong><span>Print / PDF</span></div>
+      </div>
+      <ul>
+        <li>Trace latency, failed scrapes, empty photo arrays, LLM pairs</li>
+        <li>Compare demo vs live URL trajectories</li>
+        <li>Eval sets when expanding to multi-agent copy</li>
+      </ul>
+      <div class="footer"><span>Jason Lim · Listing Brochure Studio · DRE #02444964</span><span>6 / 11</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Why this wins</div>
+      <h2>Real estate × AI — owned by someone in the deal.</h2>
+      <div class="numrow"><strong>Distribution</strong> Every listing is a demo. jasonlimrealty.com is the brand.</div>
+      <div class="numrow"><strong>Workflow wedge</strong> Brochure → CMA narrative, AI estimate, launch kits.</div>
+      <div class="numrow"><strong>Trust moat</strong> Licensed Compass agent (DRE #02444964) building for peers.</div>
+      <div class="numrow"><strong>Platform ready</strong> HF demos + LangSmith quality from day one.</div>
+      <div class="footer"><span>Jason Lim · Listing Brochure Studio · DRE #02444964</span><span>7 / 11</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">How to expand this project</div>
+      <h2>From brochure MVP → listing OS.</h2>
+      <div class="grid3">
+        <div class="card"><h3>Near-term</h3><p>LangGraph + LangSmith traces · LLM copy polish · MLS/IDX batch brochures</p></div>
+        <div class="card"><h3>Product</h3><p>AI Estimate narrative · seller portal · team brand kits</p></div>
+        <div class="card"><h3>Scale</h3><p>Official portal APIs · mobile capture packs · template marketplace</p></div>
+      </div>
+      <div class="footer"><span>Jason Lim · Listing Brochure Studio · DRE #02444964</span><span>8 / 11</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">What’s live today</div>
+      <h2>Shipped. Not slideware.</h2>
+      <div class="numrow"><strong>HF Space</strong> Compass import, Maps, Edit brochure, Print/PDF</div>
+      <div class="numrow"><strong>Brand</strong> Jason Lim · Compass · DRE #02444964</div>
+      <div class="numrow"><strong>Honesty</strong> Compass RapidAPI only — example photos if scrape empty</div>
+      <div class="numrow"><strong>Next</strong> LangSmith trajectory traces on compose / LLM polish</div>
+      <div class="footer"><span>Jason Lim · Listing Brochure Studio · DRE #02444964</span><span>9 / 11</span></div>
+    </section>
+
+    <section class="slide dark">
+      <div class="eyebrow">The ask</div>
+      <h2>Help us turn every listing into a brand moment.</h2>
+      <ul>
+        <li>Design partners: SV agents &amp; teams to pilot brochure → seller packs</li>
+        <li>Technical: LangSmith workspace + eval budget</li>
+        <li>Capital / advisors: real-estate-tech operators</li>
+      </ul>
+      <p style="margin-top:28px;">We’re building the luxury listing brochure layer — and tracing every run.</p>
+      <div class="footer"><span>Jason Lim · Listing Brochure Studio · DRE #02444964</span><span>10 / 11</span></div>
+    </section>
+
+    <section class="slide dark">
+      <div class="eyebrow">Close</div>
+      <h1>Let’s generate the next listing<br />before the open house.</h1>
+      <p style="color:var(--gold);font-weight:600;">Jason Lim · Compass REALTOR® · DRE #02444964</p>
+      <p>jason.lim@compass.com · (510) 480-7191 · jasonlimrealty.com</p>
+      <p>Questions? Let’s open LangSmith and walk a trajectory live.</p>
+      <div class="footer"><span>Jason Lim · Listing Brochure Studio · DRE #02444964</span><span>11 / 11</span></div>
+    </section>
+  </div>
+</body>
+</html>

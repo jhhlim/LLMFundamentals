@@ -1,6 +1,10 @@
 # Project Notes Demo — 10-Minute VC Pitch (Speaker Script)
 
-**File:** `Jason_Lim_Project_Notes_Demo_10min_VC_Pitch.pptx`  
+**Files (repo root):**
+- `Jason_Lim_Project_Notes_Demo_10min_VC_Pitch.pptx` — regenerated for Keynote/PowerPoint
+- `Jason_Lim_Project_Notes_Demo_10min_VC_Pitch_Keynote.pptx` — same deck (Keynote-friendly copy)
+- `Jason_Lim_Project_Notes_Demo_10min_VC_Pitch.html` — open in Safari if Keynote still fails (Print → PDF)
+
 **Live demo:** https://jasonnlim-listing-brochure-studio-jason-realty.static.hf.space  
 **Hub:** https://huggingface.co/spaces/jasonnlim/listing-brochure-studio-jason-realty  
 
