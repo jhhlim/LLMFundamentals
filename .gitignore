@@ -6,3 +6,5 @@ __pycache__/
 .python-version
 luxury/node_modules/
 luxury/dist/
+spaces/listing-brochure-studio/luxury/node_modules/
+spaces/listing-brochure-studio/luxury/dist/
