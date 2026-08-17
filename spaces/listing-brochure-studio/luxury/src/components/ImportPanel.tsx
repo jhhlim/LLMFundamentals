@@ -9,7 +9,8 @@ import {
   type ListingSource,
   type PortalApiKeys,
 } from '../lib/listingImport'
-import type { Listing } from '../data/listing'
+import type { Agent, Listing } from '../data/listing'
+import { displayWebsite } from '../lib/agentAuth'
 
 function KeyField({
   label,
@@ -40,11 +41,17 @@ function KeyField({
 }
 
 export function ImportPanel({
+  agent,
   onImported,
   onDemo,
+  onEditProfile,
+  onSignOut,
 }: {
+  agent: Agent
   onImported: (listing: Listing, source: ListingSource, meta?: { usedExamplePhotos: boolean; notice: string }) => void
   onDemo: () => void
+  onEditProfile?: () => void
+  onSignOut?: () => void
 }) {
   const [url, setUrl] = useState('')
   const [keys, setKeys] = useState<PortalApiKeys>(() => loadPortalApiKeys())
@@ -62,7 +69,7 @@ export function ImportPanel({
     setStatus(`Fetching ${source ? sourceLabel(source) : 'listing'} details + photos via RapidAPI…`)
     try {
       savePortalApiKeys(keys)
-      const result = await importListingFromUrl(url, keys)
+      const result = await importListingFromUrl(url, keys, agent)
       setStatus(result.notice)
       onImported(result.listing, result.source, {
         usedExamplePhotos: result.usedExamplePhotos,
@@ -87,13 +94,45 @@ export function ImportPanel({
       </div>
 
       <div className="relative z-10 mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-6 py-16">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-gold-soft">
-          Jason Lim · Compass · DRE #02444964
-        </p>
-        <h1 className="editorial-display mt-4 text-5xl md:text-6xl">Create a luxury listing brochure</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-gold-soft">
+            {[agent.name, agent.brokerage, agent.dre].filter(Boolean).join(' · ')}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {onEditProfile && (
+              <button
+                type="button"
+                onClick={onEditProfile}
+                className="rounded-full border border-white/20 px-3 py-1.5 text-xs text-white/80 hover:bg-white/10"
+              >
+                Edit profile
+              </button>
+            )}
+            {onSignOut && (
+              <button
+                type="button"
+                onClick={onSignOut}
+                className="rounded-full border border-white/20 px-3 py-1.5 text-xs text-white/80 hover:bg-white/10"
+              >
+                Sign out
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="mt-4 flex items-center gap-4">
+          <img src={agent.photo} alt={agent.name} className="h-14 w-14 rounded-2xl object-cover ring-1 ring-white/20" />
+          <div>
+            <p className="font-serif text-xl">{agent.name}</p>
+            <p className="text-sm text-white/60">
+              {agent.title}
+              {displayWebsite(agent.website) ? ` · ${displayWebsite(agent.website)}` : ''}
+            </p>
+          </div>
+        </div>
+        <h1 className="editorial-display mt-6 text-5xl md:text-6xl">Create a luxury listing brochure</h1>
         <p className="mt-5 max-w-2xl text-base leading-relaxed text-white/70 md:text-lg">
           Paste a listing link from Compass, Zillow, or Redfin. We scrape photos, beds/baths, living area, lot size,
-          garage, year built, and walk score — then compose an editorial brochure you can refine before Print / PDF.
+          garage, year built, and walk score — then compose an editorial brochure branded with your profile.
         </p>
 
         <div className="mt-10 rounded-[2rem] border border-white/10 bg-white/5 p-6 backdrop-blur-md md:p-8">

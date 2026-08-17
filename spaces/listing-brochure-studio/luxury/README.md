@@ -1,6 +1,8 @@
 # Luxury Listing Brochure
 
-Premium editorial brochure for Jason Lim · Compass.
+Premium editorial brochure for any agent — Compass, Keller Williams, eXp, RE/MAX, and independent.
+
+Sign in with a local profile (name, photo, license, brokerage). Imported Compass, Zillow, and Redfin listings are branded with that profile before Print / PDF.
 
 ## Stack
 - React + Vite + TypeScript

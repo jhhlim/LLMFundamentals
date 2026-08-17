@@ -1,5 +1,6 @@
 import { QRCodeSVG } from 'qrcode.react'
 import type { Listing } from '../data/listing'
+import { displayWebsite } from '../lib/agentAuth'
 
 /** Print-only Letter brochure — separate from the interactive scroll layout. */
 export function PrintBrochure({ listing }: { listing: Listing }) {
@@ -147,7 +148,7 @@ export function PrintBrochure({ listing }: { listing: Listing }) {
               {listing.agent.phone} · {listing.agent.email}
             </p>
             <p>
-              {listing.agent.dre} · jasonlimrealty.com
+              {[listing.agent.dre, displayWebsite(listing.agent.website)].filter(Boolean).join(' · ')}
             </p>
           </div>
           <div className="print-qr light">

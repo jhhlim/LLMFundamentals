@@ -1,8 +1,7 @@
-import { demoListing, type FeatureCard, type Listing, type ListingImage, type NeighborhoodPlace } from '../data/listing'
+import { demoListing, type Agent, type FeatureCard, type Listing, type ListingImage, type NeighborhoodPlace } from '../data/listing'
+import { applyAgentToListing } from './agentAuth'
 
 export type ListingSource = 'compass' | 'zillow' | 'redfin' | 'realtor' | 'mls' | 'unknown'
-
-const BRAND_AGENT = demoListing.agent
 
 const HOSTS = {
   compass: 'compass-com-real-estate-data-api.p.rapidapi.com',
@@ -1360,16 +1359,16 @@ export function googleMapsEmbedUrl(address: string): string {
   return `https://www.google.com/maps?q=${encodeURIComponent(q)}&z=15&output=embed`
 }
 
-function withJasonBrand(listing: Listing, sourceUrl: string): Listing {
-  return {
+function withAgentBrand(listing: Listing, sourceUrl: string, agent?: Agent): Listing {
+  const next = {
     ...listing,
     listingUrl: sourceUrl || listing.listingUrl,
-    website: 'https://www.jasonlimrealty.com',
-    agent: { ...BRAND_AGENT },
   }
+  if (!agent) return next
+  return applyAgentToListing(next, agent)
 }
 
-function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string): Listing {
+function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, agent?: Agent): Listing {
   const photos = extractListingPhotos(data)
   const amenities = asList(
     data.amenities || data.features || data.highlights || data.key_features || dig(data, ['resoFacts.highlights']),
@@ -1431,9 +1430,13 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string): Lis
   const homeType = prettyHomeType(asString(dig(data, ['property_type', 'home_type', 'type', 'propertyType'])))
   const regionHint = state && ['CA', 'California'].includes(state) ? 'Bay Area' : city || place
 
+  const credit = agent
+    ? `prepared as a private listing brochure by ${agent.name}${agent.brokerage ? `, ${agent.brokerage}` : ''}.`
+    : 'prepared as a private listing brochure.'
+
   const fmtSqft = (n: number | null) => (n == null ? '—' : `${Math.round(n).toLocaleString()} SF`)
 
-  return withJasonBrand(
+  return withAgentBrand(
     {
       address: address || 'Address on request',
       city,
@@ -1449,9 +1452,9 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string): Lis
       subhead: `A refined ${homeType} presentation for ${regionHint} sellers and buyers.`,
       about:
         description ||
-        `Discover this residence in ${place}. Thoughtful spaces, standout presentation, and a setting that makes everyday life feel considered — prepared as a private listing brochure by Jason Lim, Compass.`,
+        `Discover this residence in ${place}. Thoughtful spaces, standout presentation, and a setting that makes everyday life feel considered — ${credit}`,
       listingUrl: sourceUrl,
-      website: 'https://www.jasonlimrealty.com',
+      website: agent?.website || '',
       stats: [
         { label: 'Bedrooms', value: beds != null ? String(beds) : '—', icon: 'bed' },
         { label: 'Bathrooms', value: baths != null ? String(baths) : '—', icon: 'bath' },
@@ -1467,9 +1470,19 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string): Lis
       places: placesForLocation(neighborhood, city, data.schools),
       walkScore,
       lifestyle: lifestyleFromImages(images, neighborhood, city),
-      agent: BRAND_AGENT,
+      agent: agent || {
+        name: '',
+        title: 'REALTOR®',
+        brokerage: '',
+        phone: '',
+        email: '',
+        dre: '',
+        photo: '',
+        website: '',
+      },
     },
     sourceUrl,
+    agent,
   )
 }
 
@@ -1794,7 +1807,7 @@ async function fetchRedfinRaw(url: string, apiKey: string): Promise<Record<strin
   return data
 }
 
-async function fetchListing(url: string, source: ListingSource, apiKey: string): Promise<Listing> {
+async function fetchListing(url: string, source: ListingSource, apiKey: string, agent?: Agent): Promise<Listing> {
   let data: Record<string, unknown>
   switch (source) {
     case 'compass':
@@ -1809,7 +1822,7 @@ async function fetchListing(url: string, source: ListingSource, apiKey: string):
     default:
       throw new Error(`Unsupported listing source: ${source}`)
   }
-  return normalizeGeneric(data, url)
+  return normalizeGeneric(data, url, agent)
 }
 
 function portalKeyForSource(source: ListingSource, keys: PortalApiKeys): string {
@@ -1842,7 +1855,11 @@ export type ImportResult = {
   notice: string
 }
 
-export async function importListingFromUrl(url: string, keys: PortalApiKeys | string): Promise<ImportResult> {
+export async function importListingFromUrl(
+  url: string,
+  keys: PortalApiKeys | string,
+  agent?: Agent,
+): Promise<ImportResult> {
   const trimmed = url.trim()
   if (!trimmed) throw new Error('Paste a Compass, Zillow, or Redfin listing URL first.')
 
@@ -1867,7 +1884,7 @@ export async function importListingFromUrl(url: string, keys: PortalApiKeys | st
     throw new Error(`Add your RapidAPI key for ${sourceLabel(source)}. Subscribe to ${products} on RapidAPI.`)
   }
 
-  let listing = await fetchListing(trimmed, source, apiKey)
+  let listing = await fetchListing(trimmed, source, apiKey, agent)
 
   if (source === 'redfin' && listing.images.length) {
     const reachable = await probeReachablePhotos(listing.images.map((img) => img.src))
@@ -1886,6 +1903,8 @@ export async function importListingFromUrl(url: string, keys: PortalApiKeys | st
     })
     notice = `${sourceLabel(source)} facts loaded, but RapidAPI returned no photo URLs. Example photos were added — replace them in Edit brochure.`
   }
+
+  if (agent) listing = applyAgentToListing(listing, agent)
 
   return { listing, source, usedExamplePhotos, notice }
 }

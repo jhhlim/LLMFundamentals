@@ -28,6 +28,17 @@ export type LifestyleMoment = {
   caption: string
 }
 
+export type Agent = {
+  name: string
+  title: string
+  brokerage: string
+  phone: string
+  email: string
+  dre: string
+  photo: string
+  website: string
+}
+
 export type Listing = {
   address: string
   city: string
@@ -48,16 +59,7 @@ export type Listing = {
   places: NeighborhoodPlace[]
   walkScore: number
   lifestyle: LifestyleMoment[]
-  agent: {
-    name: string
-    title: string
-    brokerage: string
-    phone: string
-    email: string
-    dre: string
-    photo: string
-    website: string
-  }
+  agent: Agent
 }
 
 export const demoListing: Listing = {
@@ -72,8 +74,8 @@ export const demoListing: Listing = {
   subhead: 'A light-filled Silicon Valley residence where architecture, garden, and everyday ease meet.',
   about:
     'Set on a quiet Willow Glen street, this residence opens with a sense of calm arrival — sunlit volumes, refined materials, and a floor plan designed for both intimate evenings and generous gatherings. The kitchen anchors the home with quiet precision, while the primary suite offers a private retreat above the garden. Outdoors, a covered patio and landscaped grounds invite long Silicon Valley summers: morning coffee, golden-hour dinners, and weekends that never feel rushed. Minutes from downtown Willow Glen’s boutiques and cafés, yet tucked into a neighborhood cadence that still feels residential — this is a home composed for how people actually live in the South Bay.',
-  listingUrl: 'https://www.jasonlimrealty.com',
-  website: 'https://www.jasonlimrealty.com',
+  listingUrl: 'https://maps.google.com/?q=1287+Willow+Glen+Way+San+Jose+CA+95125',
+  website: '',
   stats: [
     { label: 'Bedrooms', value: '4', icon: 'bed' },
     { label: 'Bathrooms', value: '3', icon: 'bath' },

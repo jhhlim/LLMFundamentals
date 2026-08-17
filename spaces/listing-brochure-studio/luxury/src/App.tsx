@@ -2,6 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { demoListing, type Listing } from './data/listing'
 import type { ListingSource } from './lib/listingImport'
 import { sourceLabel } from './lib/listingImport'
+import {
+  applyAgentToListing,
+  loadSession,
+  signOut,
+  toAgent,
+  type AgentAccount,
+} from './lib/agentAuth'
 import { ImportPanel } from './components/ImportPanel'
 import { HeroSection } from './components/HeroSection'
 import { PropertyStats } from './components/PropertyStats'
@@ -14,6 +21,8 @@ import { Footer } from './components/Footer'
 import { Toolbar } from './components/Toolbar'
 import { PrintBrochure } from './components/PrintBrochure'
 import { EditFactsPanel } from './components/EditFactsPanel'
+import { AuthScreen } from './components/AuthScreen'
+import { AgentProfilePanel } from './components/AgentProfilePanel'
 
 function hasMissingStats(listing: Listing) {
   return listing.stats.some(
@@ -26,6 +35,8 @@ function needsEditAttention(listing: Listing, usedExamplePhotos: boolean) {
 }
 
 export default function App() {
+  const [account, setAccount] = useState<AgentAccount | null>(() => loadSession())
+  const [profileOpen, setProfileOpen] = useState(false)
   const [dark, setDark] = useState(() => {
     if (typeof window === 'undefined') return false
     return window.localStorage.getItem('brochure_theme') === 'dark'
@@ -36,6 +47,7 @@ export default function App() {
   const [usedExamplePhotos, setUsedExamplePhotos] = useState(false)
   const [importNotice, setImportNotice] = useState('')
 
+  const agent = account ? toAgent(account) : null
   const missing = useMemo(
     () => (listing ? needsEditAttention(listing, usedExamplePhotos) : false),
     [listing, usedExamplePhotos],
@@ -48,34 +60,70 @@ export default function App() {
   }, [dark])
 
   useEffect(() => {
-    if (!listing) return
+    if (!listing || !agent) return
     const prev = document.title
-    document.title = `${listing.address} · Jason Lim Compass Brochure`
+    document.title = `${listing.address} · ${agent.name}`
     return () => {
       document.title = prev
     }
-  }, [listing])
+  }, [listing, agent])
+
+  function handleSignedIn(next: AgentAccount) {
+    setAccount(next)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function handleProfileSaved(next: AgentAccount) {
+    setAccount(next)
+    setListing((current) => (current ? applyAgentToListing(current, toAgent(next)) : current))
+  }
+
+  function handleSignOut() {
+    signOut()
+    setAccount(null)
+    setListing(null)
+    setSource(null)
+    setEditOpen(false)
+    setProfileOpen(false)
+    setUsedExamplePhotos(false)
+    setImportNotice('')
+  }
+
+  if (!account || !agent) {
+    return <AuthScreen onSignedIn={handleSignedIn} />
+  }
 
   if (!listing) {
     return (
-      <ImportPanel
-        onImported={(next, detected, meta) => {
-          setListing(next)
-          setSource(detected)
-          setUsedExamplePhotos(Boolean(meta?.usedExamplePhotos))
-          setImportNotice(meta?.notice || '')
-          setEditOpen(needsEditAttention(next, Boolean(meta?.usedExamplePhotos)))
-          window.scrollTo({ top: 0, behavior: 'smooth' })
-        }}
-        onDemo={() => {
-          setListing(demoListing)
-          setSource('unknown')
-          setUsedExamplePhotos(false)
-          setImportNotice('')
-          setEditOpen(false)
-          window.scrollTo({ top: 0, behavior: 'smooth' })
-        }}
-      />
+      <>
+        <ImportPanel
+          agent={agent}
+          onEditProfile={() => setProfileOpen(true)}
+          onSignOut={handleSignOut}
+          onImported={(next, detected, meta) => {
+            setListing(applyAgentToListing(next, agent))
+            setSource(detected)
+            setUsedExamplePhotos(Boolean(meta?.usedExamplePhotos))
+            setImportNotice(meta?.notice || '')
+            setEditOpen(needsEditAttention(next, Boolean(meta?.usedExamplePhotos)))
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+          }}
+          onDemo={() => {
+            setListing(applyAgentToListing(demoListing, agent))
+            setSource('unknown')
+            setUsedExamplePhotos(false)
+            setImportNotice('')
+            setEditOpen(false)
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+          }}
+        />
+        <AgentProfilePanel
+          account={account}
+          open={profileOpen}
+          onClose={() => setProfileOpen(false)}
+          onSaved={handleProfileSaved}
+        />
+      </>
     )
   }
 
@@ -83,6 +131,7 @@ export default function App() {
     <div className={dark ? 'bg-[#071421] text-[#f7f3ec]' : 'bg-paper text-ink'}>
       <Toolbar
         dark={dark}
+        agent={agent}
         onToggleTheme={() => setDark((v) => !v)}
         onNewListing={() => {
           setListing(null)
@@ -92,15 +141,17 @@ export default function App() {
           setImportNotice('')
         }}
         onEditFacts={() => setEditOpen(true)}
+        onEditProfile={() => setProfileOpen(true)}
+        onSignOut={handleSignOut}
       />
 
       <div className="no-print sticky top-0 z-40 space-y-0">
         <div className="border-b border-stone-light/40 bg-warm/95 px-4 py-2 text-center text-xs uppercase tracking-[0.18em] text-stone backdrop-blur transition-colors dark:border-white/10 dark:bg-[#0c1f33]/95 dark:text-stone-light/75">
           {source && source !== 'unknown'
-            ? `Generated from ${sourceLabel(source)} RapidAPI · Jason Lim branding applied${
+            ? `Generated from ${sourceLabel(source)} RapidAPI · ${agent.name} · ${agent.brokerage}${
                 missing ? ' · Review photos/stats in Edit brochure' : ''
               }`
-            : 'Demo brochure · Jason Lim Compass branding'}
+            : `Demo brochure · ${agent.name} · ${agent.brokerage}`}
         </div>
         <div className="border-b border-amber-200/40 bg-amber-50 px-4 py-2 text-center text-xs leading-relaxed text-ink/80 transition-colors dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-50/90">
           Import supports Compass, Zillow, and Redfin via separate RapidAPI keys.
@@ -121,7 +172,7 @@ export default function App() {
           <LifestyleSection listing={listing} />
           <AgentSection listing={listing} />
         </main>
-        <Footer />
+        <Footer listing={listing} />
       </div>
 
       <PrintBrochure listing={listing} />
@@ -131,11 +182,17 @@ export default function App() {
         open={editOpen}
         onClose={() => setEditOpen(false)}
         onSave={(next) => {
-          setListing(next)
-          // If user replaced photos, clear example flag when gallery no longer matches example captions
+          setListing(applyAgentToListing(next, agent))
           const stillExample = next.images.some((img) => /example listing photo/i.test(img.alt))
           setUsedExamplePhotos(stillExample)
         }}
+      />
+
+      <AgentProfilePanel
+        account={account}
+        open={profileOpen}
+        onClose={() => setProfileOpen(false)}
+        onSaved={handleProfileSaved}
       />
     </div>
   )
