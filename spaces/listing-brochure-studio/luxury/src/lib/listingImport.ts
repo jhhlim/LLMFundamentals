@@ -11,8 +11,27 @@ const HOSTS = {
   zillow56: 'zillow56.p.rapidapi.com',
   redfin: 'redfin-com-data-api.p.rapidapi.com',
   redfinAlt: 'real-time-redfin-data.p.rapidapi.com',
-  redfinUnified: 'real-time-real-estate-data2.p.rapidapi.com',
 } as const
+
+/** Human-readable RapidAPI product names for subscribe hints. */
+const RAPIDAPI_PRODUCT: Record<string, string> = {
+  [HOSTS.compass]: 'Compass.com Real Estate Data API',
+  [HOSTS.zillow]: 'Zillow Scraper API',
+  [HOSTS.zillowAlt]: 'Real-Time Real-Estate Data',
+  [HOSTS.zillow56]: 'Zillow56',
+  [HOSTS.redfin]: 'Redfin.com Data API',
+  [HOSTS.redfinAlt]: 'Real-Time Redfin Data',
+}
+
+class PortalFetchError extends Error {
+  skippable: boolean
+
+  constructor(message: string, skippable: boolean) {
+    super(message)
+    this.name = 'PortalFetchError'
+    this.skippable = skippable
+  }
+}
 
 export type PortalApiKeys = {
   compass?: string
@@ -927,14 +946,21 @@ async function rapidGet(host: string, path: string, apiKey: string): Promise<Rec
     )
   }
   if (res.status === 401 || res.status === 403) {
-    throw new Error(`API key rejected for ${host}. Subscribe to that RapidAPI product, then try again.`)
+    throw new PortalFetchError(
+      `Not subscribed to ${RAPIDAPI_PRODUCT[host] || host} on RapidAPI.`,
+      true,
+    )
   }
   if (res.status === 429) throw new Error('Rate limit hit. Wait a moment and retry.')
+  if (res.status === 404 || /endpoint.*does not exist|not found/i.test(apiMessage)) {
+    throw new PortalFetchError(apiMessage || `Endpoint not found on ${host}`, true)
+  }
   if (res.status >= 400) {
-    throw new Error(apiMessage || `API error ${res.status}`)
+    throw new PortalFetchError(apiMessage || `API error ${res.status}`, res.status >= 500)
   }
   if (json.success === false) {
-    throw new Error(asString(json.error || json.message, 'Listing fetch failed'))
+    const msg = asString(json.error || json.message, 'Listing fetch failed')
+    throw new PortalFetchError(msg, /not found|invalid url|no data/i.test(msg))
   }
   return json
 }
@@ -942,18 +968,36 @@ async function rapidGet(host: string, path: string, apiKey: string): Promise<Rec
 async function fetchPortalRaw(
   attempts: Array<{ host: string; path: string }>,
   apiKey: string,
+  portalLabel: string,
 ): Promise<Record<string, unknown>> {
-  let lastErr: Error | null = null
+  const failures: string[] = []
+  let lastFatal: Error | null = null
+
   for (const { host, path } of attempts) {
     try {
       const json = await rapidGet(host, path, apiKey)
       return unwrapCompassPayload(json)
     } catch (err) {
-      lastErr = err instanceof Error ? err : new Error(String(err))
-      if (/quota|exceeded|rate limit/i.test(lastErr.message)) throw lastErr
+      const error = err instanceof Error ? err : new Error(String(err))
+      const product = RAPIDAPI_PRODUCT[host] || host
+      failures.push(`${product}: ${error.message}`)
+
+      if (/quota|exceeded|rate limit/i.test(error.message)) throw error
+      if (err instanceof PortalFetchError && err.skippable) continue
+      lastFatal = error
     }
   }
-  throw lastErr || new Error('All API endpoints failed for this listing.')
+
+  if (lastFatal && failures.length <= 1) throw lastFatal
+
+  const tried = attempts.map((a) => RAPIDAPI_PRODUCT[a.host] || a.host).join(' · ')
+  throw new Error(
+    `${portalLabel} import failed after trying: ${tried}. ` +
+      (failures.length
+        ? `Details: ${failures.join(' | ')}. `
+        : '') +
+      `Subscribe to one of those products on RapidAPI (same account key works once subscribed), then retry.`,
+  )
 }
 
 function extractZpid(url: string): string | null {
@@ -963,10 +1007,16 @@ function extractZpid(url: string): string | null {
   return pathMatch?.[1] || null
 }
 
+function extractRedfinPropertyId(url: string): string | null {
+  const m = url.match(/\/home\/(\d+)/i)
+  return m?.[1] || null
+}
+
 async function fetchCompassRaw(url: string, apiKey: string): Promise<Record<string, unknown>> {
   return fetchPortalRaw(
     [{ host: HOSTS.compass, path: `/compass/property?url=${encodeURIComponent(url)}` }],
     apiKey,
+    'Compass',
   )
 }
 
@@ -978,9 +1028,10 @@ async function fetchZillowRaw(url: string, apiKey: string): Promise<Record<strin
     attempts.push({ host: HOSTS.zillow, path: `/zillow/property/${zpid}` })
     attempts.push({ host: HOSTS.zillow56, path: `/property?zpid=${zpid}` })
   }
+  // Unified real-estate API last — often a separate subscription from Zillow Scraper
   attempts.push({ host: HOSTS.zillowAlt, path: `/property-details?url=${encodeURIComponent(url)}` })
 
-  let data = await fetchPortalRaw(attempts, apiKey)
+  let data = await fetchPortalRaw(attempts, apiKey, 'Zillow')
 
   if (zpid) {
     try {
@@ -1001,14 +1052,18 @@ async function fetchZillowRaw(url: string, apiKey: string): Promise<Record<strin
 
 async function fetchRedfinRaw(url: string, apiKey: string): Promise<Record<string, unknown>> {
   const encoded = encodeURIComponent(url)
-  return fetchPortalRaw(
-    [
-      { host: HOSTS.redfin, path: `/details?url=${encoded}` },
-      { host: HOSTS.redfinAlt, path: `/property-details?url=${encoded}` },
-      { host: HOSTS.redfinUnified, path: `/redfin/property-details?url=${encoded}` },
-    ],
-    apiKey,
-  )
+  const propertyId = extractRedfinPropertyId(url)
+  const attempts: Array<{ host: string; path: string }> = [
+    { host: HOSTS.redfin, path: `/details?url=${encoded}` },
+    { host: HOSTS.redfinAlt, path: `/property-details?url=${encoded}` },
+  ]
+  if (propertyId) {
+    attempts.push({
+      host: HOSTS.redfinAlt,
+      path: `/property-details?property_id=${propertyId}`,
+    })
+  }
+  return fetchPortalRaw(attempts, apiKey, 'Redfin')
 }
 
 async function fetchListing(url: string, source: ListingSource, apiKey: string): Promise<Listing> {
@@ -1075,9 +1130,13 @@ export async function importListingFromUrl(url: string, keys: PortalApiKeys | st
 
   const apiKey = portalKeyForSource(source, portalKeys)
   if (!apiKey) {
-    throw new Error(
-      `Add your RapidAPI key for ${sourceLabel(source)} (${source === 'compass' ? 'Compass.com Real Estate Data API' : source === 'zillow' ? 'Zillow Scraper API or Real-Time Real-Estate Data' : 'Redfin.com Data API or Real-Time Redfin Data'}).`,
-    )
+    const products =
+      source === 'compass'
+        ? 'Compass.com Real Estate Data API'
+        : source === 'zillow'
+          ? 'Zillow Scraper API (recommended) or Zillow56'
+          : 'Redfin.com Data API (recommended) or Real-Time Redfin Data'
+    throw new Error(`Add your RapidAPI key for ${sourceLabel(source)}. Subscribe to ${products} on RapidAPI.`)
   }
 
   let listing = await fetchListing(trimmed, source, apiKey)

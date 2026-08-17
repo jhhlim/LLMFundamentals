@@ -164,7 +164,7 @@ export function ImportPanel({
               />
               <KeyField
                 label="Redfin"
-                hint="Redfin.com Data API (/details?url=…) or Real-Time Redfin Data (/property-details?url=…)"
+                hint="Subscribe to Redfin.com Data API and/or Real-Time Redfin Data on RapidAPI — not Real-Time Real Estate Data v2 unless you use that product."
                 value={keys.redfin || ''}
                 onChange={(redfin) => setKeys((k) => ({ ...k, redfin }))}
               />
