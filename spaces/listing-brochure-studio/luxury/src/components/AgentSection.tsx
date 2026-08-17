@@ -7,7 +7,7 @@ export function AgentSection({ listing }: { listing: Listing }) {
   const { agent } = listing
 
   return (
-    <section className="brochure-page relative overflow-hidden bg-ink text-white">
+    <section className="brochure-page surface-ink relative overflow-hidden">
       <div className="absolute inset-0">
         <img
           src={listing.images[0]?.src}
@@ -15,7 +15,7 @@ export function AgentSection({ listing }: { listing: Listing }) {
           className="h-full w-full object-cover opacity-25"
           loading="lazy"
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-ink via-ink/92 to-ink/70" />
+        <div className="absolute inset-0 bg-gradient-to-r from-ink via-ink/92 to-ink/70 dark:from-[#040b14] dark:via-[#040b14]/95 dark:to-[#040b14]/75" />
       </div>
 
       <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col justify-center px-6 py-16 md:px-12 lg:px-16">

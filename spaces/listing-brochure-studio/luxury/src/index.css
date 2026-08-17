@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Class-based dark mode (html.dark) — required for Tailwind v4 toggles */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Cormorant Garamond", Georgia, "Times New Roman", serif;
@@ -23,8 +26,13 @@
   }
 
   body {
-    @apply bg-paper text-ink font-sans antialiased;
+    @apply bg-paper text-ink font-sans antialiased transition-colors duration-300;
     margin: 0;
+  }
+
+  html.dark body {
+    background: #071421;
+    color: #f7f3ec;
   }
 
   ::selection {
@@ -34,7 +42,7 @@
 
 @layer components {
   .brochure-page {
-    @apply relative w-full overflow-hidden;
+    @apply relative w-full overflow-hidden transition-colors duration-300;
     min-height: 100vh;
   }
 
@@ -43,15 +51,42 @@
   }
 
   .eyebrow {
-    @apply text-[11px] uppercase tracking-[0.28em] font-semibold text-stone;
+    @apply text-[11px] uppercase tracking-[0.28em] font-semibold text-stone dark:text-stone-light/80;
   }
 
   .soft-card {
-    @apply rounded-2xl bg-white/80 border border-stone-light/40 shadow-[0_18px_50px_-28px_rgba(11,31,51,0.45)];
+    @apply rounded-2xl border border-stone-light/40 bg-white/80 shadow-[0_18px_50px_-28px_rgba(11,31,51,0.45)]
+      transition-colors duration-300
+      dark:border-white/10 dark:bg-white/[0.07] dark:shadow-[0_18px_50px_-28px_rgba(0,0,0,0.65)];
   }
 
   .gold-rule {
     @apply h-px w-16 bg-gradient-to-r from-gold to-transparent;
+  }
+
+  /* Light surfaces flip in dark mode */
+  .surface-light {
+    @apply bg-paper text-ink dark:bg-[#071421] dark:text-[#f7f3ec];
+  }
+
+  .surface-warm {
+    @apply bg-warm text-ink dark:bg-[#0c1f33] dark:text-[#f7f3ec];
+  }
+
+  .surface-warm-deep {
+    @apply bg-warm-deep text-ink dark:bg-[#10263d] dark:text-[#f7f3ec];
+  }
+
+  .surface-ink {
+    @apply bg-ink text-white dark:bg-[#040b14];
+  }
+
+  .prose-ink {
+    @apply text-ink dark:text-[#f7f3ec];
+  }
+
+  .prose-muted {
+    @apply text-stone dark:text-stone-light/75;
   }
 }
 

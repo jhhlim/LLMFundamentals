@@ -25,7 +25,7 @@ export function NeighborhoodSection({ listing }: { listing: Listing }) {
           : 'Set Walk Score in Edit brochure, or leave blank for print.'
 
   return (
-    <section className="brochure-page bg-ink text-white px-6 py-16 md:px-12 md:py-20 lg:px-16">
+    <section className="brochure-page surface-ink px-6 py-16 md:px-12 md:py-20 lg:px-16">
       <div className="mx-auto grid min-h-[calc(100vh-8rem)] max-w-6xl items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
         <div>
           <FadeIn>

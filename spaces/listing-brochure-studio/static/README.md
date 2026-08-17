@@ -11,8 +11,8 @@ short_description: Compass RapidAPI listing → luxury brochure + Letter PDF
 
 # Jason Lim · Luxury Listing Brochure
 
-Import a **Compass.com** listing URL. Photos and facts are scraped via the **Compass RapidAPI** (PullAPI).
+Import a **Compass.com** listing URL. Photos and facts via Compass RapidAPI.
 
-**Notice:** This version uses Compass.com data/API only — not Zillow or Redfin (those need their own separate APIs).
+**Notice:** Compass.com API only — not Zillow/Redfin.
 
-If Compass returns no photos, example listing photos are filled in so you can still design; replace them in **Edit brochure**.
+Dark/Light theme toggles the full brochure surfaces. Edit brochure for photos/facts. Print/PDF with Background graphics on.

@@ -23,7 +23,10 @@ function needsEditAttention(listing: Listing, usedExamplePhotos: boolean) {
 }
 
 export default function App() {
-  const [dark, setDark] = useState(false)
+  const [dark, setDark] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.localStorage.getItem('brochure_theme') === 'dark'
+  })
   const [listing, setListing] = useState<Listing | null>(null)
   const [source, setSource] = useState<ListingSource | null>(null)
   const [editOpen, setEditOpen] = useState(false)
@@ -37,7 +40,8 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
-    document.body.style.background = dark ? '#0b1f33' : '#fcfaf6'
+    document.body.style.background = dark ? '#071421' : '#fcfaf6'
+    window.localStorage.setItem('brochure_theme', dark ? 'dark' : 'light')
   }, [dark])
 
   useEffect(() => {
@@ -73,7 +77,7 @@ export default function App() {
   }
 
   return (
-    <div className={dark ? 'bg-ink text-white' : 'bg-paper text-ink'}>
+    <div className={dark ? 'bg-[#071421] text-[#f7f3ec]' : 'bg-paper text-ink'}>
       <Toolbar
         dark={dark}
         onToggleTheme={() => setDark((v) => !v)}
@@ -88,14 +92,14 @@ export default function App() {
       />
 
       <div className="no-print sticky top-0 z-40 space-y-0">
-        <div className="border-b border-stone-light/40 bg-warm/95 px-4 py-2 text-center text-xs uppercase tracking-[0.18em] text-stone backdrop-blur">
+        <div className="border-b border-stone-light/40 bg-warm/95 px-4 py-2 text-center text-xs uppercase tracking-[0.18em] text-stone backdrop-blur transition-colors dark:border-white/10 dark:bg-[#0c1f33]/95 dark:text-stone-light/75">
           {source && source !== 'unknown'
             ? `Generated from Compass RapidAPI · Jason Lim branding applied${
                 missing ? ' · Review photos/stats in Edit brochure' : ''
               }`
             : 'Demo brochure · Jason Lim Compass branding'}
         </div>
-        <div className="border-b border-amber-200/40 bg-amber-50 px-4 py-2 text-center text-xs leading-relaxed text-ink/80">
+        <div className="border-b border-amber-200/40 bg-amber-50 px-4 py-2 text-center text-xs leading-relaxed text-ink/80 transition-colors dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-50/90">
           Notice: this build uses the <strong>Compass.com RapidAPI</strong> only — not Zillow or Redfin (those need
           their own APIs).
           {usedExamplePhotos
