@@ -164,6 +164,19 @@ function dig(data: Record<string, unknown>, paths: string[]): unknown {
 function toNumber(value: unknown): number | null {
   if (value == null || value === '') return null
   if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>
+    return toNumber(
+      obj.total ??
+        obj.totalBathrooms ??
+        obj.value ??
+        obj.raw ??
+        obj.count ??
+        obj.amount ??
+        obj.squareFeet ??
+        obj.formatted,
+    )
+  }
   const cleaned = String(value).replace(/,/g, '').match(/(\d+(\.\d+)?)/)
   if (!cleaned) return null
   const n = Number(cleaned[1])
@@ -509,11 +522,21 @@ function redfinPathFromUrl(url: string): string {
   return path.startsWith('/') ? path : `/${path}`
 }
 
-/** Merge nested Compass payload shapes into one lookup object (PullAPI + alternate scrapers). */
+/** Merge nested Compass payload shapes into one lookup object (PullAPI + Compass SSR listing). */
 function unwrapCompassPayload(payload: Record<string, unknown>): Record<string, unknown> {
   let data: Record<string, unknown> = payload
   if (data.data && typeof data.data === 'object' && !Array.isArray(data.data)) {
     data = data.data as Record<string, unknown>
+  }
+  if (data.props && typeof data.props === 'object' && !Array.isArray(data.props)) {
+    data = { ...data, ...(data.props as Record<string, unknown>) }
+  }
+  const listingRelation = data.listingRelation
+  if (listingRelation && typeof listingRelation === 'object' && !Array.isArray(listingRelation)) {
+    const rel = listingRelation as Record<string, unknown>
+    if (rel.listing && typeof rel.listing === 'object' && !Array.isArray(rel.listing)) {
+      data = { ...data, ...(rel.listing as Record<string, unknown>) }
+    }
   }
   if (data.property && typeof data.property === 'object' && !Array.isArray(data.property)) {
     const nested = data.property as Record<string, unknown>
@@ -533,22 +556,94 @@ function unwrapCompassPayload(payload: Record<string, unknown>): Record<string, 
   }
   if (data.size && typeof data.size === 'object' && !Array.isArray(data.size)) {
     const size = data.size as Record<string, unknown>
-    data = { ...data, ...size, size }
+    data = {
+      ...data,
+      ...size,
+      size,
+      beds: data.beds ?? size.bedrooms ?? size.beds,
+      baths: data.baths ?? size.totalBathrooms ?? size.bathrooms ?? size.fullBathrooms,
+      sqft: data.sqft ?? size.squareFeet ?? size.livingArea,
+      lot_size_sqft: data.lot_size_sqft ?? size.lotSizeInSquareFeet ?? size.lotSize,
+      year_built: data.year_built ?? size.yearBuilt,
+    }
+  }
+  if (data.location && typeof data.location === 'object' && !Array.isArray(data.location)) {
+    const loc = data.location as Record<string, unknown>
+    const existingCity = asString(data.city)
+    const neighborhood = asString(loc.neighborhood)
+    data = {
+      ...data,
+      location: loc,
+      street_address: data.street_address || loc.prettyAddress || loc.streetAddress,
+      city: existingCity && existingCity !== neighborhood ? data.city : loc.city || data.city,
+      state: data.state || loc.state,
+      zip: data.zip || loc.zipCode || loc.zip,
+      neighborhood: data.neighborhood || loc.neighborhood,
+    }
+  }
+  if (data.buildingInfo && typeof data.buildingInfo === 'object' && !Array.isArray(data.buildingInfo)) {
+    const info = data.buildingInfo as Record<string, unknown>
+    data = {
+      ...data,
+      year_built: data.year_built || info.buildingYearOpened || info.yearBuilt,
+      buildingInfo: info,
+    }
+  }
+  if (data.detailedInfo && typeof data.detailedInfo === 'object' && !Array.isArray(data.detailedInfo)) {
+    const details = data.detailedInfo as Record<string, unknown>
+    data = {
+      ...data,
+      ...details,
+      detailedInfo: details,
+      garageSpaces: data.garageSpaces ?? details.garageSpaces ?? details.totalParkingSpaces,
+    }
+  }
+  if (data.price && typeof data.price === 'object' && !Array.isArray(data.price)) {
+    const priceObj = data.price as Record<string, unknown>
+    data = {
+      ...data,
+      price: priceObj.formatted || priceObj.lastKnown || priceObj.listed || priceObj.listPrice || data.price,
+      list_price: priceObj.lastKnown || priceObj.listed,
+    }
+  }
+  const media = data.media
+  if (Array.isArray(media) && media.length) {
+    const urls = media
+      .map((item) => {
+        if (!item || typeof item !== 'object') return ''
+        const obj = item as Record<string, unknown>
+        return asString(obj.originalUrl || obj.originUrl || obj.url || obj.thumbnailUrl)
+      })
+      .filter(Boolean)
+    if (urls.length) {
+      data = { ...data, photos: [...flattenPhotoUrls(data.photos), ...urls], image_urls: urls }
+    }
   }
   return data
 }
 
 const BED_KEYS = new Set(['beds', 'bedrooms', 'beds_total', 'numbedrooms', 'bedroomstotal', 'bedroomcount'])
-const BATH_KEYS = new Set(['baths', 'bathrooms', 'baths_total', 'numbathrooms', 'bathroomstotal', 'bathroomcount'])
+const BATH_KEYS = new Set([
+  'baths',
+  'bathrooms',
+  'baths_total',
+  'numbathrooms',
+  'bathroomstotal',
+  'bathroomcount',
+  'totalbathrooms',
+  'fullbathrooms',
+])
 const SQFT_KEYS = new Set([
   'sqft',
   'living_area_sqft',
   'living_area',
   'square_feet',
+  'squarefeet',
   'livingarea',
   'building_size',
   'squarefootage',
   'interior_sqft',
+  'abovegradetotalareasquarefeet',
 ])
 const LOT_KEYS = new Set([
   'lot_size_sqft',
@@ -557,6 +652,7 @@ const LOT_KEYS = new Set([
   'lotsize',
   'lot_sqft',
   'lotsquarefeet',
+  'lotsizeinsquarefeet',
   'land_area',
   'land_area_sqft',
   'parcel_size',
@@ -581,7 +677,14 @@ const WALK_KEYS = new Set([
   'neighborhoodwalkscore',
   'walkability',
 ])
-const YEAR_KEYS = new Set(['year_built', 'yearbuilt', 'built_year', 'construction_year'])
+const YEAR_KEYS = new Set([
+  'year_built',
+  'yearbuilt',
+  'built_year',
+  'construction_year',
+  'buildingyearopened',
+  'yearopened',
+])
 
 function isPlausibleYear(n: number): boolean {
   return n >= 1800 && n <= 2035
@@ -711,6 +814,8 @@ function collectTextBlobs(data: Record<string, unknown>): string[] {
 
   pushFacts(data.amenities || data.features || data.highlights || data.key_features)
   pushFacts(data.keyFacts || data.key_facts || data.facts || data.propertyFacts || data.listing_facts)
+  pushFacts(data.keyDetails || data.regionalKeyDetails || data.buildingKeyDetails)
+  pushFacts(dig(data, ['detailedInfo.keyDetails', 'buildingInfo.buildingKeyDetails', 'listingDetails']))
   pushFacts(data.summary || data.size)
 
   const description = asString(dig(data, ['description', 'remarks', 'public_remarks', 'overview']))
@@ -751,6 +856,7 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
 
   const bathsDirect =
     pickNumber(data, [
+      'totalBathrooms',
       'baths',
       'bathrooms',
       'baths_total',
@@ -758,11 +864,28 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
       'bathroomsTotal',
       'property.baths',
       'mainHouseInfo.baths',
+      'size.totalBathrooms',
+      'size.bathrooms',
     ]) ??
     findNumberByKeys(data, BATH_KEYS)
 
-  const bathsFull = pickNumber(data, ['bathsFull', 'full_baths', 'bathroomsFull', 'fullBaths'])
-  const bathsHalf = pickNumber(data, ['bathsHalf', 'half_baths', 'bathroomsHalf', 'partialBaths', 'halfBaths'])
+  const bathsFull = pickNumber(data, [
+    'bathsFull',
+    'full_baths',
+    'bathroomsFull',
+    'fullBaths',
+    'fullBathrooms',
+    'size.fullBathrooms',
+  ])
+  const bathsHalf = pickNumber(data, [
+    'bathsHalf',
+    'half_baths',
+    'bathroomsHalf',
+    'partialBaths',
+    'halfBaths',
+    'halfBathrooms',
+    'size.halfBathrooms',
+  ])
 
   let baths = bathsDirect
   if (baths == null && bathsFull != null) {
@@ -788,12 +911,14 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
       'building_size',
       'squareFootage',
       'interior_sqft',
+      'squareFeet',
       'size.squareFeet',
       'size.livingArea',
       'property.livingArea',
       'building.sqft',
       'building.living_area',
       'building.livingArea',
+      'aboveGradeTotalAreaSquareFeet',
     ]) ??
     findNumberByKeys(data, SQFT_KEYS) ??
     matchFromText(textBlobs, [
@@ -814,7 +939,9 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
       'land_area_sqft',
       'land_area',
       'parcel_size',
+      'lotSizeInSquareFeet',
       'size.lotSize',
+      'size.lotSizeInSquareFeet',
       'property.lotSize',
       'building.lot_size',
       'building.lotSize',
@@ -823,6 +950,7 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
     matchFromText(textBlobs, [
       /lot(?:\s*size)?\s*[:#]?\s*([\d,]+)\s*(?:sq\.?\s*ft\.?|sqft|sf\b)/i,
       /([\d,]+)\s*(?:sq\.?\s*ft\.?|sf\b)\s*lot/i,
+      /(?:ac|acres?)\s*\/\s*([\d,]+)\s*(?:sf|sq)/i,
       /([\d,]+)\s*(?:lot|lot size)/i,
     ])
 
@@ -841,6 +969,8 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
       'yearBuilt',
       'building.year_built',
       'building.yearBuilt',
+      'buildingInfo.buildingYearOpened',
+      'buildingYearOpened',
       'built_year',
       'construction_year',
     ]) ??
@@ -982,6 +1112,7 @@ function looksLikeImageUrl(value: string): boolean {
   const v = value.trim()
   if (!/^https?:\/\//i.test(v)) return false
   if (/photos\.compass\.com/i.test(v)) return true
+  if (/compass\.com\/m\//i.test(v)) return true
   if (/photos\.zillowstatic\.com/i.test(v)) return true
   if (/cdn-redfin\.com/i.test(v)) return true
   if (IMAGE_URL_RE.test(v)) return true
@@ -1249,15 +1380,17 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string): Lis
       'zip_code',
       'zipcode',
       'zip',
+      'zipCode',
       'address.zipcode',
       'address.zip',
       'address.postalCode',
       'postalCode',
+      'location.zipCode',
     ]),
   )
-  const neighborhood = asString(
-    dig(data, ['neighborhood', 'area', 'subdivision', 'region', 'location', 'addressLocality']),
-  )
+  const neighborhoodRaw = dig(data, ['neighborhood', 'area', 'subdivision', 'location.neighborhood'])
+  const neighborhood =
+    neighborhoodRaw && typeof neighborhoodRaw === 'object' ? '' : asString(neighborhoodRaw)
   const description = asString(
     dig(data, [
       'description',
@@ -1419,8 +1552,13 @@ function extractRedfinPropertyId(url: string): string | null {
 }
 
 async function fetchCompassRaw(url: string, apiKey: string): Promise<Record<string, unknown>> {
+  const encoded = encodeURIComponent(url)
   return fetchPortalRaw(
-    [{ host: HOSTS.compass, path: `/compass/property?url=${encodeURIComponent(url)}` }],
+    [
+      { host: HOSTS.compass, path: `/compass/property?url=${encoded}` },
+      { host: HOSTS.compass, path: `/property?url=${encoded}` },
+      { host: HOSTS.compass, path: `/compass/listing?url=${encoded}` },
+    ],
     apiKey,
     'Compass',
   )
