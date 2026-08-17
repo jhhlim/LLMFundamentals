@@ -1,64 +1,89 @@
-/** Quick sanity check for Redfin JSON-LD payload parsing (no API key). */
-import { readFileSync } from 'node:fs'
-import { pathToFileURL } from 'node:url'
+/** Sanity checks for Redfin payload parsing (no API key). */
 
-// Mock response matching Redfin.Com Data API /details documentation
-const mockRedfinDetails = {
-  organization: {
-    name: 'Redfin',
-    url: 'https://www.redfin.com',
-  },
-  properties: [
-    {
-      name: '1134 Monroe St',
-      address: {
-        streetAddress: '1134 Monroe St',
-        addressLocality: 'Santa Clara',
-        addressRegion: 'CA',
-        postalCode: '95050',
-        addressCountry: 'US',
-      },
-      image: 'https://ssl.cdn-redfin.com/photo/123/bigphoto/456/test_1.jpg',
-      price: 1898000,
-      currency: 'USD',
-      numberOfBedrooms: 3,
-      numberOfBathroomsTotal: 2,
-      floorSize: { value: 1450, unitCode: 'FTK' },
-      listing_url:
-        'https://www.redfin.com/CA/Santa-Clara/1134-Monroe-St-95050/home/1279750',
-      latitude: 37.352,
-      longitude: -121.936,
+function titleCaseWords(slug) {
+  return slug.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function parseRedfinUrlMeta(url) {
+  const m = url.match(/redfin\.(?:com|ca)\/([A-Z]{2})\/([^/]+)\/([^/]+)\/home\/(\d+)/i)
+  if (!m) return {}
+  const [, state, citySlug, addressSlug, propertyId] = m
+  const zipMatch = addressSlug.match(/-(\d{5})(?:-\d{4})?$/i)
+  const zip = zipMatch?.[1] || ''
+  const streetSlug = addressSlug.replace(/-(\d{5})(?:-\d{4})?$/i, '')
+  return {
+    state: state.toUpperCase(),
+    city: titleCaseWords(citySlug),
+    zip,
+    street_address: titleCaseWords(streetSlug),
+    propertyId: Number(propertyId),
+  }
+}
+
+function extractRedfinMediaPhotos(data) {
+  const urls = []
+  const push = (raw) => {
+    if (typeof raw === 'string' && raw.includes('cdn-redfin')) urls.push(raw)
+  }
+  const photos = data.mediaBrowserInfo?.photos || []
+  for (const ph of photos) {
+    push(ph.photoUrls?.fullScreenPhotoUrl)
+    push(ph.photoUrls?.largePhotoUrl)
+  }
+  return { photos: [...new Set(urls)] }
+}
+
+const url =
+  'https://www.redfin.com/CA/Santa-Clara/1134-Monroe-St-95050/home/1279750'
+const urlMeta = parseRedfinUrlMeta(url)
+
+const stingrayAboveFold = {
+  resultCode: 0,
+  payload: {
+    propertyId: 1279750,
+    listingId: 138238059,
+    addressInfo: {
+      streetAddress: '1134 Monroe St',
+      city: 'Santa Clara',
+      state: 'CA',
+      zip: '95050',
     },
-  ],
+    price: 1100000,
+    beds: 3,
+    baths: 2,
+    sqFt: 1450,
+    mediaBrowserInfo: {
+      photos: [
+        {
+          photoUrls: {
+            fullScreenPhotoUrl: 'https://ssl.cdn-redfin.com/photo/1/bigphoto/1/a.jpg',
+          },
+        },
+        {
+          photoUrls: {
+            fullScreenPhotoUrl: 'https://ssl.cdn-redfin.com/photo/1/bigphoto/1/b.jpg',
+          },
+        },
+        {
+          photoUrls: {
+            fullScreenPhotoUrl: 'https://ssl.cdn-redfin.com/photo/1/bigphoto/1/c.jpg',
+          },
+        },
+      ],
+    },
+  },
 }
 
-// Inline minimal copies of helpers would be heavy — import compiled output after build.
-// For now, validate expected field mapping logic manually.
-function normalizeRedfinProperty(prop) {
-  const out = { ...prop }
-  const a = prop.address || {}
-  out.street_address = a.streetAddress || a.street
-  out.city = a.addressLocality || a.city
-  out.state = a.addressRegion || a.state
-  out.zip = a.postalCode || a.zip
-  if (prop.image) out.photos = [prop.image]
-  if (prop.numberOfBedrooms != null) out.beds = prop.numberOfBedrooms
-  if (prop.numberOfBathroomsTotal != null) out.baths = prop.numberOfBathroomsTotal
-  if (prop.floorSize?.value != null) out.sqft = prop.floorSize.value
-  return out
-}
+const photos = extractRedfinMediaPhotos(stingrayAboveFold.payload)
 
-const flat = normalizeRedfinProperty(mockRedfinDetails.properties[0])
 const checks = [
-  ['street_address', flat.street_address === '1134 Monroe St'],
-  ['city', flat.city === 'Santa Clara'],
-  ['state', flat.state === 'CA'],
-  ['zip', flat.zip === '95050'],
-  ['price', mockRedfinDetails.properties[0].price === 1898000],
-  ['beds', flat.beds === 3],
-  ['baths', flat.baths === 2],
-  ['sqft', flat.sqft === 1450],
-  ['photos', Array.isArray(flat.photos) && flat.photos.length === 1],
+  ['url city', urlMeta.city === 'Santa Clara'],
+  ['url zip', urlMeta.zip === '95050'],
+  ['url street', urlMeta.street_address === '1134 Monroe St'],
+  ['url propertyId', urlMeta.propertyId === 1279750],
+  ['stingray beds', stingrayAboveFold.payload.beds === 3],
+  ['stingray sqFt', stingrayAboveFold.payload.sqFt === 1450],
+  ['photo count', photos.photos.length === 3],
 ]
 
 let failed = 0

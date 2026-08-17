@@ -200,6 +200,97 @@ function mergeRecordFields(
   return merged
 }
 
+function titleCaseWords(slug: string): string {
+  return slug
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+/** Parse city, state, zip, street from Redfin URL path when API omits them. */
+function parseRedfinUrlMeta(url: string): Record<string, unknown> {
+  const m = url.match(/redfin\.(?:com|ca)\/([A-Z]{2})\/([^/]+)\/([^/]+)\/home\/(\d+)/i)
+  if (!m) return {}
+  const [, state, citySlug, addressSlug, propertyId] = m
+  const zipMatch = addressSlug.match(/-(\d{5})(?:-\d{4})?$/i)
+  const zip = zipMatch?.[1] || ''
+  const streetSlug = addressSlug.replace(/-(\d{5})(?:-\d{4})?$/i, '')
+  const street = titleCaseWords(streetSlug)
+  return {
+    state: state.toUpperCase(),
+    city: titleCaseWords(citySlug),
+    zip,
+    street_address: street,
+    neighborhood: titleCaseWords(citySlug),
+    propertyId: Number(propertyId),
+    property_id: propertyId,
+  }
+}
+
+function extractRedfinMediaPhotos(data: Record<string, unknown>): Record<string, unknown> {
+  const urls: string[] = []
+
+  const pushUrl = (raw: unknown) => {
+    if (typeof raw !== 'string' || !raw.trim()) return
+    urls.push(raw.trim().replace(/^\/\//, 'https://'))
+  }
+
+  const collectFromPhotos = (photos: unknown) => {
+    if (!Array.isArray(photos)) return
+    for (const ph of photos) {
+      if (!ph || typeof ph !== 'object') continue
+      const p = ph as Record<string, unknown>
+      pushUrl(p.url)
+      pushUrl(p.href)
+      pushUrl(p.src)
+      pushUrl(p.fullScreenPhotoUrl)
+      pushUrl(p.fullscreenPhotoUrl)
+      pushUrl(p.largePhotoUrl)
+      const pu = p.photoUrls
+      if (pu && typeof pu === 'object' && !Array.isArray(pu)) {
+        const u = pu as Record<string, unknown>
+        pushUrl(u.fullScreenPhotoUrl)
+        pushUrl(u.fullscreenPhotoUrl)
+        pushUrl(u.largePhotoUrl)
+        pushUrl(u.nonFullScreenPhotoUrl)
+        pushUrl(u.mediumPhotoUrl)
+      }
+    }
+  }
+
+  collectFromPhotos(data.photos)
+  collectFromPhotos(dig(data, ['mediaBrowserInfo.photos']))
+  collectFromPhotos(dig(data, ['payload.mediaBrowserInfo.photos']))
+
+  if (!urls.length) return {}
+  const unique = [...new Set(urls.filter((u) => looksLikeImageUrl(u)))]
+  return unique.length ? { photos: unique, image_urls: unique } : {}
+}
+
+function parseRedfinInfoPanel(data: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  const panel = data.mainHouseInfoPanelInfo || data.mainHouseInfoPanel
+  if (!Array.isArray(panel)) return out
+
+  const facts: string[] = []
+  for (const item of panel) {
+    if (!item || typeof item !== 'object') continue
+    const row = item as Record<string, unknown>
+    const label = asString(row.desc || row.label || row.name || row.title)
+    const value = asString(row.feature || row.value || row.text || row.content)
+    if (label && value) facts.push(`${label}: ${value}`)
+
+    const lower = label.toLowerCase()
+    if (/bed/i.test(lower)) out.beds = toNumber(value) ?? out.beds
+    if (/bath/i.test(lower)) out.baths = toNumber(value) ?? out.baths
+    if (/sq\.?\s*ft|square feet|living area/i.test(lower)) out.sqft = toNumber(value) ?? out.sqft
+    if (/lot/i.test(lower)) out.lot_size = toNumber(value) ?? out.lot_size
+    if (/year built|built in/i.test(lower)) out.yearBuilt = toNumber(value) ?? out.yearBuilt
+    if (/garage|parking/i.test(lower) && !out.garage) out.garage = value
+  }
+  if (facts.length) out.key_facts = facts
+  return out
+}
+
 /** Flatten schema.org / JSON-LD property objects from Redfin.Com Data API. */
 function normalizeRedfinProperty(prop: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = { ...prop }
@@ -246,7 +337,13 @@ function normalizeRedfinProperty(prop: Record<string, unknown>): Record<string, 
 
 /** Unwrap Redfin.Com Data API + Real-Time Redfin Data response shapes. */
 function unwrapRedfinPayload(payload: Record<string, unknown>): Record<string, unknown> {
-  let data = unwrapCompassPayload(payload)
+  let data: Record<string, unknown> = { ...payload }
+
+  if (data.resultCode != null && data.payload && typeof data.payload === 'object' && !Array.isArray(data.payload)) {
+    data = mergeRecordFields(data, unwrapRedfinPayload(data.payload as Record<string, unknown>))
+  }
+
+  data = unwrapCompassPayload(data)
 
   if (Array.isArray(data.properties) && data.properties.length) {
     for (const item of data.properties) {
@@ -256,15 +353,41 @@ function unwrapRedfinPayload(payload: Record<string, unknown>): Record<string, u
     }
   }
 
-  for (const nestKey of ['homeData', 'aboveTheFold', 'belowTheFold', 'mainHouseInfo', 'propertyInfo']) {
+  const addressInfo = data.addressInfo
+  if (addressInfo && typeof addressInfo === 'object' && !Array.isArray(addressInfo)) {
+    const ai = addressInfo as Record<string, unknown>
+    data = mergeRecordFields(data, {
+      street_address: ai.streetAddress,
+      city: ai.city,
+      state: ai.state,
+      zip: ai.zip || ai.zipcode || ai.postalCode,
+      address: ai,
+    })
+  }
+
+  data = mergeRecordFields(data, extractRedfinMediaPhotos(data))
+  data = mergeRecordFields(data, parseRedfinInfoPanel(data))
+
+  for (const nestKey of [
+    'homeData',
+    'aboveTheFold',
+    'belowTheFold',
+    'mainHouseInfo',
+    'propertyInfo',
+    'mediaBrowserInfo',
+    'amenitiesInfo',
+    'publicRecordsInfo',
+    'schoolsInfo',
+    'walkScoreData',
+  ]) {
     const nested = data[nestKey]
     if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
-      data = mergeRecordFields(data, nested as Record<string, unknown>)
+      data = mergeRecordFields(data, unwrapRedfinPayload(nested as Record<string, unknown>))
     }
   }
 
   const payloadData = payload.payload
-  if (payloadData && typeof payloadData === 'object' && !Array.isArray(payloadData)) {
+  if (payloadData && typeof payloadData === 'object' && !Array.isArray(payloadData) && payloadData !== data) {
     data = mergeRecordFields(data, unwrapRedfinPayload(payloadData as Record<string, unknown>))
   }
 
@@ -774,14 +897,22 @@ function extractListingPhotos(data: Record<string, unknown>): string[] {
     ...asList(data.image_url),
     ...asList(data.image_urls),
     ...asList(data.images),
-    ...asList(dig(data, ['media.photos', 'gallery', 'photoUrls', 'building.photos', 'listingPhotos', 'propertyPhotos'])),
+    ...asList(dig(data, [
+      'media.photos',
+      'gallery',
+      'photoUrls',
+      'building.photos',
+      'listingPhotos',
+      'propertyPhotos',
+      'mediaBrowserInfo.photos',
+    ])),
   ].filter((u) => looksLikeImageUrl(u))
 
   if (primary.length >= 2) return [...new Set(primary)]
   return [...new Set([...primary, ...extractPhotoUrls(data)])]
 }
 /** Deep-collect listing photo URLs from nested portal payloads. */
-export function extractPhotoUrls(data: unknown, limit = 24): string[] {
+export function extractPhotoUrls(data: unknown, limit = 48): string[] {
   const found: string[] = []
   const seen = new Set<string>()
 
@@ -822,6 +953,11 @@ export function extractPhotoUrls(data: unknown, limit = 24): string[] {
       'photoUrl',
       'imageUrl',
       'image_url',
+      'fullScreenPhotoUrl',
+      'fullscreenPhotoUrl',
+      'largePhotoUrl',
+      'nonFullScreenPhotoUrl',
+      'mediumPhotoUrl',
     ]
     for (const key of preferredKeys) {
       const val = obj[key]
@@ -853,6 +989,7 @@ export function extractPhotoUrls(data: unknown, limit = 24): string[] {
       'photoUrls',
       'gallery',
       'media',
+      'mediaBrowserInfo',
       'responsivePhotos',
       'hugePhotos',
       'originalPhotos',
@@ -863,6 +1000,7 @@ export function extractPhotoUrls(data: unknown, limit = 24): string[] {
       'data',
       'property',
       'resoFacts',
+      'payload',
     ]
     for (const key of nestKeys) {
       if (key in obj) walk(obj[key], depth + 1)
@@ -875,7 +1013,7 @@ export function extractPhotoUrls(data: unknown, limit = 24): string[] {
 
 function buildImages(urls: string[]): ListingImage[] {
   const spans: ListingImage['span'][] = ['hero', 'wide', 'tall', 'square', 'wide', 'square', 'tall', 'square']
-  return urls.slice(0, 12).map((src, i) => ({
+  return urls.slice(0, 24).map((src, i) => ({
     src,
     alt: `Listing photo ${i + 1}`,
     span: spans[i] || 'square',
@@ -1033,8 +1171,21 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string): Lis
       'postalCode',
     ]),
   )
-  const neighborhood = asString(dig(data, ['neighborhood', 'area', 'subdivision', 'region', 'location']))
-  const description = asString(dig(data, ['description', 'remarks', 'public_remarks', 'overview']))
+  const neighborhood = asString(
+    dig(data, ['neighborhood', 'area', 'subdivision', 'region', 'location', 'addressLocality']),
+  )
+  const description = asString(
+    dig(data, [
+      'description',
+      'remarks',
+      'public_remarks',
+      'publicRemarks',
+      'marketingRemarks',
+      'listingDescription',
+      'listingRemarks',
+      'overview',
+    ]),
+  )
   const price = money(
     dig(data, ['price', 'list_price', 'listPrice', 'priceInfo.price', 'offers.price', 'listPrice.value']),
   )
@@ -1220,57 +1371,95 @@ async function fetchZillowRaw(url: string, apiKey: string): Promise<Record<strin
   return data
 }
 
+async function tryRedfinMerge(
+  data: Record<string, unknown>,
+  host: string,
+  path: string,
+  apiKey: string,
+): Promise<Record<string, unknown>> {
+  try {
+    const json = await rapidGet(host, path, apiKey)
+    return mergeRecordFields(data, unwrapRedfinPayload(json))
+  } catch {
+    return data
+  }
+}
+
 async function fetchRedfinRaw(url: string, apiKey: string): Promise<Record<string, unknown>> {
   const encoded = encodeURIComponent(url)
-  const pathOnly = encodeURIComponent(redfinPathFromUrl(url))
-  const propertyId = extractRedfinPropertyId(url)
+  const pathOnly = redfinPathFromUrl(url)
+  const pathEncoded = encodeURIComponent(pathOnly)
+  const propertyIdFromUrl = extractRedfinPropertyId(url)
 
-  const attempts: Array<{ host: string; path: string }> = [
-    { host: HOSTS.redfin, path: `/details?url=${encoded}` },
-    { host: HOSTS.redfin, path: `/property/details?url=${encoded}` },
-    { host: HOSTS.redfin, path: `/initial_info?url=${encoded}` },
-    { host: HOSTS.redfin, path: `/details?url=${pathOnly}` },
+  let data: Record<string, unknown> = {}
+
+  // Step 1: resolve propertyId + listingId via initial_info / details
+  const bootstrapPaths = [
+    `/initial_info?url=${encoded}`,
+    `/initial_info?path=${pathEncoded}`,
+    `/details?url=${encoded}`,
+    `/property/details?url=${encoded}`,
+    `/details?url=${pathEncoded}`,
+  ]
+  for (const path of bootstrapPaths) {
+    data = await tryRedfinMerge(data, HOSTS.redfin, path, apiKey)
+    const ids = extractRedfinIds(data)
+    if (ids.propertyId && ids.listingId) break
+  }
+
+  if (!extractRedfinIds(data).propertyId && propertyIdFromUrl) {
+    data = mergeRecordFields(data, { propertyId: propertyIdFromUrl, property_id: propertyIdFromUrl })
+  }
+
+  data = mergeRecordFields(data, parseRedfinUrlMeta(url))
+
+  const { propertyId: pid, listingId: lid } = extractRedfinIds(data)
+  const propertyId = pid || propertyIdFromUrl || ''
+  const listingId = lid || ''
+
+  // Step 2: full listing details + photo gallery (needs propertyId + listingId)
+  if (propertyId) {
+    const listingParam = listingId || propertyId
+    const idQuery = `propertyId=${encodeURIComponent(propertyId)}&listingId=${encodeURIComponent(listingParam)}`
+    const accessQuery = `${idQuery}&accessLevel=1`
+
+    const enrichPaths = [
+      `/above_the_fold?${accessQuery}`,
+      `/aboveTheFold?${accessQuery}`,
+      `/below_the_fold?${accessQuery}`,
+      `/belowTheFold?${accessQuery}`,
+      `/photos?${idQuery}`,
+      `/mainHouseInfoPanelInfo?${accessQuery}`,
+      `/main_house_info_panel_info?${accessQuery}`,
+      `/property/details?${idQuery}`,
+    ]
+
+    for (const path of enrichPaths) {
+      data = await tryRedfinMerge(data, HOSTS.redfin, path, apiKey)
+    }
+  }
+
+  // Step 3: Real-Time Redfin Data — consolidated payload when subscribed
+  const altAttempts: Array<{ host: string; path: string }> = [
     { host: HOSTS.redfinAlt, path: `/property-details?url=${encoded}` },
   ]
   if (propertyId) {
-    attempts.push({
+    altAttempts.push({
       host: HOSTS.redfinAlt,
       path: `/property-details?property_id=${propertyId}`,
     })
   }
+  try {
+    const alt = await fetchPortalRaw(altAttempts, apiKey, 'Redfin alt', unwrapRedfinPayload, () => true)
+    data = mergeRecordFields(data, alt)
+  } catch {
+    // Optional — separate RapidAPI product
+  }
 
-  let data = await fetchPortalRaw(
-    attempts,
-    apiKey,
-    'Redfin',
-    unwrapRedfinPayload,
-    redfinPayloadHasData,
-  )
-
-  const { propertyId: pid, listingId: lid } = extractRedfinIds(data)
-  const enrichId = pid || propertyId || ''
-  const enrichListing = lid || enrichId
-
-  if (enrichId) {
-    const enrichAttempts: Array<{ host: string; path: string }> = [
-      {
-        host: HOSTS.redfin,
-        path: `/property/details?propertyId=${encodeURIComponent(enrichId)}&listingId=${encodeURIComponent(enrichListing)}`,
-      },
-      { host: HOSTS.redfin, path: `/estimate?propertyId=${encodeURIComponent(enrichId)}` },
-    ]
-    try {
-      const extra = await fetchPortalRaw(
-        enrichAttempts,
-        apiKey,
-        'Redfin details',
-        unwrapRedfinPayload,
-        () => true,
-      )
-      data = mergeRecordFields(data, extra)
-    } catch {
-      // Optional enrichment — primary payload is enough when it has fields
-    }
+  if (!redfinPayloadHasData(data)) {
+    throw new Error(
+      'Redfin import returned no listing fields. Subscribe to Redfin.com Data API on RapidAPI and retry.',
+    )
   }
 
   return data
