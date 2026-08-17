@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jason Lim — VC Pitch (Time &amp; $$ Hook)</title>
+  <style>
+    :root { --ink:#0B1F33; --teal:#1F6F78; --gold:#B08D57; --paper:#FCFAF6; --muted:#5C6B7A; --light:#E8F2F3; --dark:#132A40; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:Georgia,serif; background:#1a1a1a; color:var(--ink); }
+    .deck { max-width:1040px; margin:0 auto; padding:24px 16px 64px; }
+    .hint { color:#ccc; font-family:system-ui,sans-serif; font-size:14px; margin-bottom:16px; }
+    .hint a { color:var(--gold); }
+    .slide {
+      background:var(--paper); border-radius:16px; padding:36px 44px 52px; margin-bottom:22px;
+      min-height:500px; box-shadow:0 20px 60px rgba(0,0,0,.35); position:relative; overflow:hidden;
+    }
+    .slide.dark { background:var(--ink); color:#fff; }
+    .slide::before { content:""; position:absolute; left:0; top:0; bottom:0; width:6px; background:var(--gold); }
+    .eyebrow { font-family:system-ui,sans-serif; font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--teal); font-weight:700; margin-bottom:8px; }
+    .dark .eyebrow { color:var(--gold); }
+    h1 { font-size:28px; line-height:1.15; margin:0 0 10px; }
+    h2 { font-size:24px; line-height:1.2; margin:0 0 10px; }
+    p, li { font-family:system-ui,sans-serif; font-size:14px; line-height:1.45; color:var(--muted); }
+    .dark p, .dark li { color:var(--light); }
+    .metrics { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin:16px 0; }
+    .metric { background:var(--dark); border-radius:12px; padding:14px; color:#fff; font-family:system-ui,sans-serif; }
+    .metric strong { display:block; color:var(--gold); font-size:20px; margin-bottom:6px; }
+    .metric span { font-size:12px; color:var(--light); }
+    .ba { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .panel { background:var(--dark); border-radius:12px; overflow:hidden; color:#fff; font-family:system-ui,sans-serif; font-size:13px; }
+    .panel .tag { padding:8px 12px; font-weight:700; font-size:11px; letter-spacing:.04em; }
+    .before .tag { background:#8B3A3A; } .after .tag { background:var(--teal); }
+    .panel .body { padding:12px 14px 16px; color:var(--light); line-height:1.4; }
+    .flow { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin:14px 0; }
+    .flow div { background:#fff; border-radius:10px; padding:10px; border-top:3px solid var(--gold); font-family:system-ui,sans-serif; font-size:12px; }
+    .flow strong { display:block; color:var(--ink); margin-bottom:4px; }
+    .grid2 { display:grid; grid-template-columns:1fr 1.5fr; gap:12px; margin-top:12px; }
+    .card { background:#fff; border-radius:12px; padding:14px; border-top:4px solid var(--teal); }
+    .card.gold { border-top-color:var(--gold); }
+    .card h3 { margin:0 0 8px; font-size:15px; }
+    .card li { font-size:13px; margin:4px 0; }
+    .ask { margin-top:12px; padding:12px 14px; border-radius:10px; background:var(--ink); color:var(--light); font-family:system-ui,sans-serif; font-size:13px; }
+    .ask strong { color:var(--gold); }
+    .footer { position:absolute; left:44px; right:44px; bottom:16px; display:flex; justify-content:space-between; font-family:system-ui,sans-serif; font-size:11px; color:var(--muted); }
+    .dark .footer { color:#9AA8B5; }
+    @media (max-width:700px) { .metrics,.ba,.flow,.grid2 { grid-template-columns:1fr; } }
+    @media print { body{background:#fff;} .hint{display:none;} .slide{box-shadow:none; break-after:page;} }
+  </style>
+</head>
+<body>
+  <div class="deck">
+    <p class="hint">Prefer <strong>PDF</strong> for Keynote. <a href="https://jasonnlim-listing-brochure-studio-jason-realty.static.hf.space">Live HF Space</a></p>
+
+    <section class="slide dark">
+      <div class="eyebrow">VC hook · time &amp; dollars</div>
+      <h1>Luxury listing marketing burns hours — and dollars — every week.</h1>
+      <p>Agents rebuild brochures in Word/Canva. At ~$75–$150/hr loaded agent time, a 2–4 hour flyer is <strong style="color:var(--gold)">$150–$600 in labor</strong> — before designer fees. “Free tools” are the expensive path.</p>
+      <div class="metrics">
+        <div class="metric"><strong>2–4 hrs</strong><span>per brochure today</span></div>
+        <div class="metric"><strong>~$150–$600</strong><span>labor cost / listing</span></div>
+        <div class="metric"><strong>&lt;10 min</strong><span>URL → edit → PDF</span></div>
+        <div class="metric"><strong>10×+</strong><span>time compression</span></div>
+      </div>
+      <div class="ba">
+        <div class="panel before"><div class="tag">BEFORE — “Free” tools that aren’t free</div><div class="body">Blank Canva/Word · photo hunting · fact paste · QA loops · inconsistent seller materials · opportunity cost of hours not selling</div></div>
+        <div class="panel after"><div class="tag">AFTER — URL → template → edit → $$ saved</div><div class="body">1) Paste Compass URL 2) Auto-fill luxury template 3) Edit gaps only 4) Print/PDF in minutes → more listings/week</div></div>
+      </div>
+      <p style="margin-top:14px;color:var(--gold);font-weight:600;">Investor line: turn marketing labor into productized margin. · Jason Lim · Compass · DRE #02444964</p>
+      <div class="footer"><span>Jason Lim · Listing Brochure Studio</span><span>1 / 4</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">The product</div>
+      <h2>Compass URL in. Luxury brochure out — in minutes.</h2>
+      <p>Listing Brochure Studio turns a compass.com listing link into a magazine-style brochure: scraped photos and facts, branded layout, neighborhood map, and Print/PDF — agents edit only what’s missing.</p>
+      <div class="flow">
+        <div><strong>1. Paste URL</strong>Compass listing</div>
+        <div><strong>2. Ingest</strong>Photos + facts</div>
+        <div><strong>3. Compose</strong>Layout + Map</div>
+        <div><strong>4. Refine</strong>Edit gaps only</div>
+        <div><strong>5. Deliver</strong>Letter PDF</div>
+      </div>
+      <ul>
+        <li>Minutes instead of multi-hour Canva rebuilds — labor saved compounds every listing</li>
+        <li>On-brand presentation: hero, gallery, Google Map, agent CTA</li>
+        <li>Editable controls: reorder photos, set cover, fill baths/sqft before PDF</li>
+        <li>Live: <a href="https://jasonnlim-listing-brochure-studio-jason-realty.static.hf.space" style="color:var(--teal)">jasonnlim-listing-brochure-studio-jason-realty.static.hf.space</a></li>
+      </ul>
+      <div class="footer"><span>Jason Lim · Listing Brochure Studio</span><span>2 / 4</span></div>
+    </section>
+
+    <section class="slide">
+      <div class="eyebrow">Why VCs care · unit economics · architecture</div>
+      <h2>Save time now. Expand into a listing OS.</h2>
+      <div class="grid2">
+        <div class="card">
+          <h3>Why investable</h3>
+          <ul>
+            <li>Clear $ pain per listing</li>
+            <li>Every appointment = demo + conversion</li>
+            <li>Wedge → seller packs / AI estimate</li>
+            <li>Licensed Compass agent trust</li>
+            <li>Shipped HF Space today</li>
+          </ul>
+        </div>
+        <div class="card gold">
+          <h3>Build next</h3>
+          <ul>
+            <li><strong>Observe</strong> — LangSmith: debug missing photos/facts</li>
+            <li><strong>Analyze</strong> — API vs brochure completeness</li>
+            <li><strong>Generate</strong> — LLM copy polish (fact-grounded)</li>
+            <li><strong>Distribute</strong> — MLS/IDX, batch, seller links, team kits</li>
+          </ul>
+        </div>
+      </div>
+      <div class="ask">
+        <strong>Back-of-envelope:</strong> 8 listings/mo × 3 hrs × $100/hr ≈ <strong>$2,400/mo</strong> labor unlocked per agent (illustrative) — brokerage seats multiply.<br /><br />
+        <strong>Ask:</strong> Design partners · Space feedback · advisors · jason.lim@compass.com · (510) 480-7191
+      </div>
+      <div class="footer"><span>Jason Lim · Listing Brochure Studio</span><span>3 / 4</span></div>
+    </section>
+
+    <section class="slide dark">
+      <div class="eyebrow">Close</div>
+      <h1>Stop paying hours for every flyer.<br />Input the URL. Edit the template. Keep the margin.</h1>
+      <p>Jason Lim · Compass · DRE #02444964 · jasonlimrealty.com</p>
+      <p style="color:var(--teal);font-weight:600;margin-top:18px;">Questions? Leave the HF Space open — show the minutes vs the hours.</p>
+      <div class="footer"><span>Jason Lim · Listing Brochure Studio</span><span>4 / 4</span></div>
+    </section>
+  </div>
+</body>
+</html>
