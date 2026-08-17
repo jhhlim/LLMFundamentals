@@ -122,6 +122,7 @@ def normalize_compass_payload(payload: dict[str, Any]) -> Listing:
         or data.get("living_area_sqft")
         or data.get("living_area")
         or data.get("square_feet")
+        or data.get("livingArea")
     )
     lot = _coerce_number(
         data.get("lot_size_sqft")

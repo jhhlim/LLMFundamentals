@@ -177,6 +177,95 @@ const LOT_KEYS = new Set([
   'parcel_size',
 ])
 const LOT_ACRE_KEYS = new Set(['lot_acres', 'lotacres', 'acres', 'lotsizeacres', 'land_area_acres'])
+const GARAGE_KEYS = new Set([
+  'garage',
+  'garagespaces',
+  'garage_spaces',
+  'numgaragespaces',
+  'garagespace',
+  'parking_spaces',
+  'parkingspaces',
+  'car_spaces',
+  'covered_parking',
+  'attached_garage',
+])
+const WALK_KEYS = new Set(['walk_score', 'walkscore'])
+const YEAR_KEYS = new Set(['year_built', 'yearbuilt', 'built_year', 'construction_year'])
+
+function isPlausibleYear(n: number): boolean {
+  return n >= 1800 && n <= 2035
+}
+
+function pickYear(data: Record<string, unknown>, paths: string[]): number | null {
+  for (const path of paths) {
+    const n = toNumber(dig(data, [path]))
+    if (n != null && isPlausibleYear(Math.round(n))) return Math.round(n)
+  }
+  return null
+}
+
+function findYearByKeys(obj: unknown, depth = 0): number | null {
+  if (depth > 8 || obj == null) return null
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const found = findYearByKeys(item, depth + 1)
+      if (found != null) return found
+    }
+    return null
+  }
+  if (typeof obj !== 'object') return null
+
+  const record = obj as Record<string, unknown>
+  for (const [key, value] of Object.entries(record)) {
+    if (YEAR_KEYS.has(key.toLowerCase())) {
+      const n = toNumber(value)
+      if (n != null && isPlausibleYear(Math.round(n))) return Math.round(n)
+    }
+  }
+  for (const value of Object.values(record)) {
+    if (value && typeof value === 'object') {
+      const found = findYearByKeys(value, depth + 1)
+      if (found != null) return found
+    }
+  }
+  return null
+}
+
+function pickWalkScore(data: Record<string, unknown>, paths: string[]): number | null {
+  for (const path of paths) {
+    const n = toNumber(dig(data, [path]))
+    if (n != null && n >= 0 && n <= 100) return Math.round(n)
+  }
+  return null
+}
+
+function findWalkScoreByKeys(obj: unknown, depth = 0): number | null {
+  if (depth > 8 || obj == null) return null
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const found = findWalkScoreByKeys(item, depth + 1)
+      if (found != null) return found
+    }
+    return null
+  }
+  if (typeof obj !== 'object') return null
+
+  const record = obj as Record<string, unknown>
+  for (const [key, value] of Object.entries(record)) {
+    const lower = key.toLowerCase()
+    if (WALK_KEYS.has(lower) || lower === 'walkscore') {
+      const n = toNumber(value)
+      if (n != null && n >= 0 && n <= 100) return Math.round(n)
+    }
+  }
+  for (const value of Object.values(record)) {
+    if (value && typeof value === 'object') {
+      const found = findWalkScoreByKeys(value, depth + 1)
+      if (found != null) return found
+    }
+  }
+  return null
+}
 
 /** Walk nested JSON for the first positive numeric value on known field names. */
 function findNumberByKeys(obj: unknown, keys: Set<string>, depth = 0): number | null {
@@ -245,9 +334,11 @@ type PropertyStats = {
   sqft: number | null
   lot: number | null
   built: number | null
+  garage: string
+  walkScore: number
 }
 
-/** Extract beds, baths, sqft, lot, year built from documented + nested Compass API fields. */
+/** Extract listing stats from documented + nested Compass API fields. */
 export function extractPropertyStats(data: Record<string, unknown>): PropertyStats {
   const textBlobs = collectTextBlobs(data)
 
@@ -284,6 +375,9 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
       'living_area',
       'square_feet',
       'livingArea',
+      'livingAreaSqFt',
+      'living_sqft',
+      'finished_sqft',
       'building_size',
       'squareFootage',
       'interior_sqft',
@@ -292,12 +386,14 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
       'property.livingArea',
       'building.sqft',
       'building.living_area',
+      'building.livingArea',
     ]) ??
     findNumberByKeys(data, SQFT_KEYS) ??
     matchFromText(textBlobs, [
       /([\d,]+)\s*(?:sq\.?\s*ft\.?|sqft|sf\b|square feet)/i,
       /living area\s*[:#]?\s*([\d,]+)/i,
       /interior\s*[:#]?\s*([\d,]+)\s*(?:sq|sf)/i,
+      /(?:finished|heated)\s*(?:sq\.?\s*ft\.?|area)\s*[:#]?\s*([\d,]+)/i,
     ])
 
   let lot =
@@ -333,15 +429,81 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
   }
 
   const built =
-    pickNumber(data, [
+    pickYear(data, [
       'year_built',
       'yearBuilt',
       'building.year_built',
       'building.yearBuilt',
-      'year',
       'built_year',
+      'construction_year',
     ]) ??
-    matchFromText(textBlobs, [/built\s*(?:in)?\s*[:#]?\s*(\d{4})/i, /(\d{4})\s*built/i, /year built\s*[:#]?\s*(\d{4})/i])
+    findYearByKeys(data) ??
+    matchFromText(textBlobs, [
+      /built\s*(?:in)?\s*[:#]?\s*(19\d{2}|20\d{2})/i,
+      /(19\d{2}|20\d{2})\s*built/i,
+      /year built\s*[:#]?\s*(19\d{2}|20\d{2})/i,
+      /(?:built|constructed)\s*[:#]?\s*(19\d{2}|20\d{2})/i,
+    ])
+
+  const garageRaw = dig(data, [
+    'garageSpaces',
+    'garage_spaces',
+    'numGarageSpaces',
+    'garage',
+    'parking.garageSpaces',
+    'parking.garage',
+    'parkingSpaces',
+    'building.garage_spaces',
+    'building.parking',
+    'parking.spaces',
+  ])
+  const garageCount =
+    pickNumber(data, [
+      'garageSpaces',
+      'garage_spaces',
+      'numGarageSpaces',
+      'parkingSpaces',
+      'parking.garageSpaces',
+      'building.garage_spaces',
+    ]) ??
+    findNumberByKeys(data, GARAGE_KEYS) ??
+    toNumber(garageRaw) ??
+    matchFromText([...asList(garageRaw), ...textBlobs], [
+      /(\d+)\s*[- ]?car(?:\s*garage)?/i,
+      /(\d+)\s*(?:car\s*)?garage/i,
+      /garage\s*[:#]?\s*(\d+)/i,
+      /parking\s*[:#]?\s*(\d+)/i,
+    ])
+
+  let garage = '—'
+  if (garageCount != null && garageCount > 0) {
+    garage = `${Math.round(garageCount)} Car`
+  } else if (garageRaw != null) {
+    const garageText = asList(garageRaw)[0] || asString(garageRaw)
+    if (garageText && !/^[\d.]+$/.test(garageText.trim())) garage = garageText
+  }
+
+  const walkObj = dig(data, ['walkScore', 'walk_score'])
+  let walkFromObj: number | null = null
+  if (walkObj && typeof walkObj === 'object' && !Array.isArray(walkObj)) {
+    walkFromObj = pickWalkScore(walkObj as Record<string, unknown>, ['walkscore', 'score', 'value', 'walk_score'])
+  }
+
+  const walkScore =
+    pickWalkScore(data, [
+      'walk_score',
+      'walkScore',
+      'walkscore',
+      'walkScore.walkscore',
+      'walk_score.score',
+      'walkScore.score',
+      'location.walkScore',
+      'location.walk_score',
+    ]) ??
+    walkFromObj ??
+    findWalkScoreByKeys(data) ??
+    matchFromText(textBlobs, [/walk\s*score\s*[:#]?\s*(\d{1,3})/i]) ??
+    0
 
   return {
     beds,
@@ -349,6 +511,8 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
     sqft,
     lot,
     built,
+    garage,
+    walkScore: Math.min(100, Math.max(0, Math.round(walkScore))),
   }
 }
 
@@ -634,15 +798,7 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _sou
   const description = asString(dig(data, ['description', 'remarks', 'public_remarks', 'overview']))
   const price = money(dig(data, ['price', 'list_price', 'listPrice', 'priceInfo.price']))
 
-  const { beds, baths, sqft, lot, built } = extractPropertyStats(data)
-  const textBlobs = collectTextBlobs(data)
-
-  const garageRaw = dig(data, ['garage', 'parking', 'garageSpaces', 'numGarageSpaces', 'parkingSpaces'])
-  const garageNum =
-    toNumber(garageRaw) ??
-    matchFromText([...asList(garageRaw), ...textBlobs], [/(\d+)\s*(?:car\s*)?garage/i, /garage\s*[:#]?\s*(\d+)/i])
-  const garageValue =
-    garageNum != null ? `${garageNum} Car` : asList(garageRaw)[0] || (garageRaw != null ? asString(garageRaw) : '—')
+  const { beds, baths, sqft, lot, built, garage, walkScore } = extractPropertyStats(data)
 
   // Photos may be empty here — importListingFromUrl applies example fallback with a notice.
   const images = buildImages(photos)
@@ -651,8 +807,6 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _sou
   const regionHint = state && ['CA', 'California'].includes(state) ? 'Bay Area' : city || place
 
   const fmtSqft = (n: number | null) => (n == null ? '—' : `${Math.round(n).toLocaleString()} SF`)
-  const walkRaw = Number(data.walk_score || data.walkScore || dig(data, ['walkScore.walkscore']))
-  const walkScore = Number.isFinite(walkRaw) && walkRaw > 0 ? walkRaw : 0
 
   return withJasonBrand(
     {
@@ -675,7 +829,7 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _sou
         { label: 'Bathrooms', value: baths != null ? String(baths) : '—', icon: 'bath' },
         { label: 'Living Area', value: fmtSqft(sqft), icon: 'area' },
         { label: 'Lot Size', value: fmtSqft(lot), icon: 'lot' },
-        { label: 'Garage', value: garageValue, icon: 'garage' },
+        { label: 'Garage', value: garage, icon: 'garage' },
         { label: 'Year Built', value: built != null ? String(built) : '—', icon: 'built' },
       ],
       images,
@@ -762,6 +916,9 @@ export async function importListingFromUrl(url: string, apiKey: string): Promise
   const statsSummary =
     statBits.length > 0 ? ` · ${statBits.slice(0, 4).join(', ')} from API` : ' · review stats in Edit brochure if any show —'
   let notice = `Loaded from Compass via RapidAPI · ${listing.images.length} listing photo${listing.images.length === 1 ? '' : 's'} scraped${statsSummary}.`
+  if (listing.walkScore > 0) {
+    notice += ` Walk Score ${listing.walkScore}.`
+  }
 
   if (!listing.images.length) {
     usedExamplePhotos = true
