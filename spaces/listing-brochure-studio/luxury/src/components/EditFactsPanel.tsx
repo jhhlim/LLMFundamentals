@@ -390,9 +390,14 @@ export function EditFactsPanel({
                   min={0}
                   max={100}
                   value={draft.walkScore || ''}
-                  onChange={(e) =>
-                    setDraft({ ...draft, walkScore: Math.min(100, Math.max(0, Number(e.target.value) || 0)) })
-                  }
+                  onChange={(e) => {
+                    const n = Math.min(100, Math.max(0, Number(e.target.value) || 0))
+                    setDraft({
+                      ...draft,
+                      walkScore: n,
+                      stats: updateStat(draft.stats, 'Walk Score', n > 0 ? String(n) : '—'),
+                    })
+                  }}
                   placeholder="e.g. 78"
                 />
               </label>

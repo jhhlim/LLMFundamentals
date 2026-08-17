@@ -1,4 +1,4 @@
-import { BedDouble, Bath, Ruler, Trees, Car, CalendarDays } from 'lucide-react'
+import { BedDouble, Bath, Ruler, Trees, Car, CalendarDays, Footprints } from 'lucide-react'
 import type { Listing, ListingStat } from '../data/listing'
 import { FadeIn } from './ui/FadeIn'
 
@@ -9,6 +9,7 @@ const iconMap = {
   lot: Trees,
   garage: Car,
   built: CalendarDays,
+  walk: Footprints,
 }
 
 function StatCard({ stat, index }: { stat: ListingStat; index: number }) {

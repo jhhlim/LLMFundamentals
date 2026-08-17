@@ -16,7 +16,9 @@ import { PrintBrochure } from './components/PrintBrochure'
 import { EditFactsPanel } from './components/EditFactsPanel'
 
 function hasMissingStats(listing: Listing) {
-  return listing.stats.some((s) => !s.value || s.value === '—')
+  return listing.stats.some(
+    (s) => s.label !== 'Walk Score' && (!s.value || s.value === '—'),
+  )
 }
 
 function needsEditAttention(listing: Listing, usedExamplePhotos: boolean) {

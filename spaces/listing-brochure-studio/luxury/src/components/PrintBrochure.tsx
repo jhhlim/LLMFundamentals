@@ -5,7 +5,7 @@ import type { Listing } from '../data/listing'
 export function PrintBrochure({ listing }: { listing: Listing }) {
   const photos = listing.images
   const hero = photos[0]?.src
-  const gallery = photos.slice(1, 5)
+  const gallery = photos.slice(1, 9)
 
   return (
     <div className="print-root hidden print:block">
@@ -35,7 +35,7 @@ export function PrintBrochure({ listing }: { listing: Listing }) {
           </div>
           <div className="print-cover-bottom">
             <div className="print-stat-row">
-              {listing.stats.slice(0, 5).map((s) => (
+              {listing.stats.slice(0, 6).map((s) => (
                 <div key={s.label}>
                   <p className="print-kicker">{s.label}</p>
                   <p className="print-stat-value">{s.value}</p>
@@ -97,7 +97,7 @@ export function PrintBrochure({ listing }: { listing: Listing }) {
             <p className="print-body">{listing.neighborhoodIntro}</p>
             <div className="print-walk">
               <p className="print-kicker">Walk Score</p>
-              <p className="print-stat-value">{listing.walkScore}</p>
+              <p className="print-stat-value">{listing.walkScore > 0 ? listing.walkScore : '—'}</p>
             </div>
           </div>
           <div className="print-place-grid">

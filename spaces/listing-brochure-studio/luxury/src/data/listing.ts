@@ -7,7 +7,7 @@ export type ListingImage = {
 export type ListingStat = {
   label: string
   value: string
-  icon: 'bed' | 'bath' | 'area' | 'lot' | 'garage' | 'built'
+  icon: 'bed' | 'bath' | 'area' | 'lot' | 'garage' | 'built' | 'walk'
 }
 
 export type FeatureCard = {
@@ -81,6 +81,7 @@ export const demoListing: Listing = {
     { label: 'Lot Size', value: '6,100 SF', icon: 'lot' },
     { label: 'Garage', value: '2 Car', icon: 'garage' },
     { label: 'Year Built', value: '2019', icon: 'built' },
+    { label: 'Walk Score', value: '78', icon: 'walk' },
   ],
   images: [
     {

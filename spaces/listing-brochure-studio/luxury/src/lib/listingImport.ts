@@ -186,18 +186,122 @@ function mergeRecordFields(
   for (const [key, value] of Object.entries(extra)) {
     if (value == null || value === '') continue
     const existing = merged[key]
-    if (existing == null || existing === '') {
-      merged[key] = value
+    if (key === 'photos' || key === 'image_urls') {
+      const combined = [
+        ...flattenPhotoUrls(existing),
+        ...flattenPhotoUrls(value),
+      ]
+      if (combined.length) merged[key] = [...new Set(combined)]
       continue
     }
-    if (key === 'photos' && Array.isArray(value) && Array.isArray(existing)) {
-      merged.photos = [...new Set([...(existing as string[]), ...(value as string[])])]
-    }
-    if (key === 'image_urls' && Array.isArray(value) && Array.isArray(existing)) {
-      merged.image_urls = [...new Set([...(existing as string[]), ...(value as string[])])]
+    if (existing == null || existing === '' || existing === 0) {
+      merged[key] = value
     }
   }
   return merged
+}
+
+function flattenPhotoUrls(value: unknown): string[] {
+  if (!value) return []
+  if (typeof value === 'string') return looksLikeListingPhoto(value) ? [upgradeRedfinPhotoUrl(value)] : []
+  if (!Array.isArray(value)) return []
+  const urls: string[] = []
+  for (const item of value) {
+    if (typeof item === 'string') {
+      if (looksLikeListingPhoto(item)) urls.push(upgradeRedfinPhotoUrl(item))
+      continue
+    }
+    if (item && typeof item === 'object') {
+      const obj = item as Record<string, unknown>
+      const pu = obj.photoUrls && typeof obj.photoUrls === 'object' ? (obj.photoUrls as Record<string, unknown>) : {}
+      for (const candidate of [
+        obj.fullScreenPhotoUrl,
+        obj.fullscreenPhotoUrl,
+        obj.lightboxPhotoUrl,
+        obj.largePhotoUrl,
+        obj.url,
+        obj.href,
+        obj.src,
+        pu.fullScreenPhotoUrl,
+        pu.fullscreenPhotoUrl,
+        pu.lightboxPhotoUrl,
+        pu.largePhotoUrl,
+      ]) {
+        if (typeof candidate === 'string' && looksLikeListingPhoto(candidate)) {
+          urls.push(upgradeRedfinPhotoUrl(candidate))
+        }
+      }
+    }
+  }
+  return urls
+}
+
+function looksLikeListingPhoto(value: string): boolean {
+  const v = value.trim()
+  if (!looksLikeImageUrl(v)) return false
+  if (/logo|sprite|icon|favicon|placeholder|pixel|1x1|tracking|badge|avatar/i.test(v)) return false
+  if (/cdn-redfin\.com\/v\d/i.test(v)) return false
+  if (/cdn-redfin\.com/i.test(v) && !/\/photo\//i.test(v)) return false
+  return true
+}
+
+function upgradeRedfinPhotoUrl(url: string): string {
+  return url
+    .replace(/^\/\//, 'https://')
+    .replace('/islphoto/', '/bigphoto/')
+    .replace('/mbpaddedwide/', '/bigphoto/')
+    .replace('/tinyphoto/', '/bigphoto/')
+    .replace(/genIslnoResize\./g, '')
+    .replace(/genMid\./g, '')
+}
+
+function pickPhotoCount(data: Record<string, unknown>): number {
+  return (
+    pickNumber(data, [
+      'photoCount',
+      'numPhotos',
+      'photosCount',
+      'mediaBrowserInfo.photoCount',
+      'photos.photoCount',
+      'photosInfo.photoCount',
+      'previewPhotosCount',
+    ]) || 0
+  )
+}
+
+function expandRedfinPhotoSequence(urls: string[], photoCount: number): string[] {
+  if (!urls.length) return urls
+  const template = urls.find((u) => /cdn-redfin\.com\/photo\/.*[_-]\d+\.[a-z]+(\?|$)/i.test(u))
+  if (!template) return urls
+
+  const match = template.match(/^(.*)[_-](\d+)(\.[a-z]+)(\?.*)?$/i)
+  if (!match) return urls
+  const [, prefix, , ext, query = ''] = match
+  const target = Math.min(Math.max(photoCount || 36, urls.length), 60)
+  if (target <= urls.length && photoCount > 0) return urls
+
+  const expanded = [...urls]
+  for (let i = 0; i < target; i++) {
+    expanded.push(`${prefix}_${i}${ext}${query}`)
+  }
+  return [...new Set(expanded)]
+}
+
+function probeReachablePhotos(urls: string[]): Promise<string[]> {
+  if (typeof Image === 'undefined') return Promise.resolve(urls)
+  return Promise.all(
+    urls.map(
+      (src) =>
+        new Promise<string | null>((resolve) => {
+          const img = new Image()
+          const done = (ok: boolean) => resolve(ok ? src : null)
+          img.onload = () => done(true)
+          img.onerror = () => done(false)
+          setTimeout(() => done(false), 3500)
+          img.src = src
+        }),
+    ),
+  ).then((rows) => rows.filter((src): src is string => Boolean(src)))
 }
 
 function titleCaseWords(slug: string): string {
@@ -227,42 +331,19 @@ function parseRedfinUrlMeta(url: string): Record<string, unknown> {
 }
 
 function extractRedfinMediaPhotos(data: Record<string, unknown>): Record<string, unknown> {
-  const urls: string[] = []
+  const urls = [
+    ...flattenPhotoUrls(data.photos),
+    ...flattenPhotoUrls(data.images),
+    ...flattenPhotoUrls(data.image_urls),
+    ...flattenPhotoUrls(dig(data, ['mediaBrowserInfo.photos'])),
+    ...flattenPhotoUrls(dig(data, ['payload.mediaBrowserInfo.photos'])),
+    ...flattenPhotoUrls(dig(data, ['photosInfo.photos'])),
+    ...flattenPhotoUrls(dig(data, ['photoList'])),
+    ...flattenPhotoUrls(dig(data, ['extraPhotos'])),
+    ...extractPhotoUrls(data, 80),
+  ].filter((u) => looksLikeListingPhoto(u)).map(upgradeRedfinPhotoUrl)
 
-  const pushUrl = (raw: unknown) => {
-    if (typeof raw !== 'string' || !raw.trim()) return
-    urls.push(raw.trim().replace(/^\/\//, 'https://'))
-  }
-
-  const collectFromPhotos = (photos: unknown) => {
-    if (!Array.isArray(photos)) return
-    for (const ph of photos) {
-      if (!ph || typeof ph !== 'object') continue
-      const p = ph as Record<string, unknown>
-      pushUrl(p.url)
-      pushUrl(p.href)
-      pushUrl(p.src)
-      pushUrl(p.fullScreenPhotoUrl)
-      pushUrl(p.fullscreenPhotoUrl)
-      pushUrl(p.largePhotoUrl)
-      const pu = p.photoUrls
-      if (pu && typeof pu === 'object' && !Array.isArray(pu)) {
-        const u = pu as Record<string, unknown>
-        pushUrl(u.fullScreenPhotoUrl)
-        pushUrl(u.fullscreenPhotoUrl)
-        pushUrl(u.largePhotoUrl)
-        pushUrl(u.nonFullScreenPhotoUrl)
-        pushUrl(u.mediumPhotoUrl)
-      }
-    }
-  }
-
-  collectFromPhotos(data.photos)
-  collectFromPhotos(dig(data, ['mediaBrowserInfo.photos']))
-  collectFromPhotos(dig(data, ['payload.mediaBrowserInfo.photos']))
-
-  if (!urls.length) return {}
-  const unique = [...new Set(urls.filter((u) => looksLikeImageUrl(u)))]
+  const unique = expandRedfinPhotoSequence([...new Set(urls)], pickPhotoCount(data))
   return unique.length ? { photos: unique, image_urls: unique } : {}
 }
 
@@ -379,6 +460,10 @@ function unwrapRedfinPayload(payload: Record<string, unknown>): Record<string, u
     'publicRecordsInfo',
     'schoolsInfo',
     'walkScoreData',
+    'walkAndBikeScore',
+    'walkAndTransitScore',
+    'walkScoreInfo',
+    'photosInfo',
   ]) {
     const nested = data[nestKey]
     if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
@@ -489,7 +574,13 @@ const GARAGE_KEYS = new Set([
   'covered_parking',
   'attached_garage',
 ])
-const WALK_KEYS = new Set(['walk_score', 'walkscore'])
+const WALK_KEYS = new Set([
+  'walk_score',
+  'walkscore',
+  'walkscorevalue',
+  'neighborhoodwalkscore',
+  'walkability',
+])
 const YEAR_KEYS = new Set(['year_built', 'yearbuilt', 'built_year', 'construction_year'])
 
 function isPlausibleYear(n: number): boolean {
@@ -805,10 +896,25 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
     if (garageText && !/^[\d.]+$/.test(garageText.trim())) garage = garageText
   }
 
-  const walkObj = dig(data, ['walkScore', 'walk_score'])
+  const walkObj = dig(data, [
+    'walkScore',
+    'walk_score',
+    'walkAndBikeScore',
+    'walkAndTransitScore',
+    'walkScoreData',
+    'walkScoreInfo',
+  ])
   let walkFromObj: number | null = null
   if (walkObj && typeof walkObj === 'object' && !Array.isArray(walkObj)) {
-    walkFromObj = pickWalkScore(walkObj as Record<string, unknown>, ['walkscore', 'score', 'value', 'walk_score'])
+    walkFromObj = pickWalkScore(walkObj as Record<string, unknown>, [
+      'walkscore',
+      'walkScore',
+      'score',
+      'value',
+      'walk_score',
+      'walkScore.walkScore',
+      'walkScore.score',
+    ])
   }
 
   const walkScore =
@@ -817,13 +923,20 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
       'walkScore',
       'walkscore',
       'walkScore.walkscore',
+      'walkScore.walkScore',
       'walk_score.score',
       'walkScore.score',
+      'walkAndBikeScore.walkScore',
+      'walkAndBikeScore.walkScore.walkScore',
+      'walkAndTransitScore.walkscore',
+      'walkAndTransitScore.walkScore',
+      'walkAndTransitScore.walkScore.walkScore',
       'location.walkScore',
       'location.walk_score',
       'resoFacts.walkScore',
-      'walkAndTransitScore.walkscore',
-      'walkAndTransitScore.walkScore',
+      'neighborhoodWalkScore',
+      'scores.walk',
+      'scores.walkScore',
     ]) ??
     walkFromObj ??
     findWalkScoreByKeys(data) ??
@@ -879,47 +992,40 @@ function looksLikeImageUrl(value: string): boolean {
 
 /** PullAPI + Zillow/Redfin photo fields on portal payloads. */
 function extractListingPhotos(data: Record<string, unknown>): string[] {
-  const photoObjects = data.photos
-  const fromPhotoObjects: string[] = []
-  if (Array.isArray(photoObjects)) {
-    for (const item of photoObjects) {
-      if (item && typeof item === 'object') {
-        const obj = item as Record<string, unknown>
-        if (typeof obj.url === 'string') fromPhotoObjects.push(obj.url)
-        if (typeof obj.href === 'string') fromPhotoObjects.push(obj.href)
-      }
-    }
-  }
-
+  const fromObjects = flattenPhotoUrls(data.photos)
   const primary = [
-    ...fromPhotoObjects,
+    ...fromObjects,
     ...asList(data.photos),
     ...asList(data.image_url),
     ...asList(data.image_urls),
     ...asList(data.images),
-    ...asList(dig(data, [
-      'media.photos',
-      'gallery',
-      'photoUrls',
-      'building.photos',
-      'listingPhotos',
-      'propertyPhotos',
-      'mediaBrowserInfo.photos',
-    ])),
-  ].filter((u) => looksLikeImageUrl(u))
+    ...asList(
+      dig(data, [
+        'media.photos',
+        'gallery',
+        'photoUrls',
+        'building.photos',
+        'listingPhotos',
+        'propertyPhotos',
+        'mediaBrowserInfo.photos',
+        'photoList',
+      ]),
+    ),
+    ...extractPhotoUrls(data, 80),
+  ]
+    .filter((u) => looksLikeListingPhoto(u))
+    .map(upgradeRedfinPhotoUrl)
 
-  if (primary.length >= 2) return [...new Set(primary)]
-  return [...new Set([...primary, ...extractPhotoUrls(data)])]
+  return expandRedfinPhotoSequence([...new Set(primary)], pickPhotoCount(data))
 }
 /** Deep-collect listing photo URLs from nested portal payloads. */
-export function extractPhotoUrls(data: unknown, limit = 48): string[] {
+export function extractPhotoUrls(data: unknown, limit = 80): string[] {
   const found: string[] = []
   const seen = new Set<string>()
 
   const push = (raw: string) => {
-    let url = raw.trim().replace(/^\/\//, 'https://')
-    if (!looksLikeImageUrl(url)) return
-    // Prefer full-size when scrapers append tiny thumbs
+    let url = upgradeRedfinPhotoUrl(raw.trim())
+    if (!looksLikeListingPhoto(url)) return
     url = url.replace(/[?&](w|width)=\d+/gi, '').replace(/\?$/, '')
     if (seen.has(url)) return
     seen.add(url)
@@ -927,7 +1033,7 @@ export function extractPhotoUrls(data: unknown, limit = 48): string[] {
   }
 
   const walk = (node: unknown, depth: number) => {
-    if (found.length >= limit || depth > 8 || node == null) return
+    if (found.length >= limit || depth > 10 || node == null) return
     if (typeof node === 'string') {
       push(node)
       return
@@ -955,16 +1061,17 @@ export function extractPhotoUrls(data: unknown, limit = 48): string[] {
       'image_url',
       'fullScreenPhotoUrl',
       'fullscreenPhotoUrl',
+      'lightboxPhotoUrl',
       'largePhotoUrl',
       'nonFullScreenPhotoUrl',
       'mediumPhotoUrl',
+      'tinyPhotoUrl',
     ]
     for (const key of preferredKeys) {
       const val = obj[key]
       if (typeof val === 'string') push(val)
     }
 
-    // Zillow mixedSources: { jpeg: [{ url, width }, ...] }
     if (obj.mixedSources && typeof obj.mixedSources === 'object') {
       const mixed = obj.mixedSources as Record<string, unknown>
       for (const format of Object.values(mixed)) {
@@ -979,31 +1086,8 @@ export function extractPhotoUrls(data: unknown, limit = 48): string[] {
       }
     }
 
-    const nestKeys = [
-      'photos',
-      'photo',
-      'images',
-      'image',
-      'image_urls',
-      'imageUrls',
-      'photoUrls',
-      'gallery',
-      'media',
-      'mediaBrowserInfo',
-      'responsivePhotos',
-      'hugePhotos',
-      'originalPhotos',
-      'listingPhotos',
-      'propertyPhotos',
-      'pictures',
-      'thumbnails',
-      'data',
-      'property',
-      'resoFacts',
-      'payload',
-    ]
-    for (const key of nestKeys) {
-      if (key in obj) walk(obj[key], depth + 1)
+    for (const value of Object.values(obj)) {
+      if (value && typeof value === 'object') walk(value, depth + 1)
     }
   }
 
@@ -1013,7 +1097,7 @@ export function extractPhotoUrls(data: unknown, limit = 48): string[] {
 
 function buildImages(urls: string[]): ListingImage[] {
   const spans: ListingImage['span'][] = ['hero', 'wide', 'tall', 'square', 'wide', 'square', 'tall', 'square']
-  return urls.slice(0, 24).map((src, i) => ({
+  return urls.slice(0, 48).map((src, i) => ({
     src,
     alt: `Listing photo ${i + 1}`,
     span: spans[i] || 'square',
@@ -1226,6 +1310,7 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string): Lis
         { label: 'Lot Size', value: fmtSqft(lot), icon: 'lot' },
         { label: 'Garage', value: garage, icon: 'garage' },
         { label: 'Year Built', value: built != null ? String(built) : '—', icon: 'built' },
+        { label: 'Walk Score', value: walkScore > 0 ? String(walkScore) : '—', icon: 'walk' },
       ],
       images,
       features: featuresFromAmenities(amenities, description),
@@ -1429,13 +1514,24 @@ async function fetchRedfinRaw(url: string, apiKey: string): Promise<Record<strin
       `/below_the_fold?${accessQuery}`,
       `/belowTheFold?${accessQuery}`,
       `/photos?${idQuery}`,
+      `/property/photos?${idQuery}`,
+      `/hood_photos?propertyId=${encodeURIComponent(propertyId)}`,
+      `/tour_insights?${accessQuery}`,
+      `/tourInsights?${accessQuery}`,
+      `/walk_score?${accessQuery}`,
+      `/walkScore?${accessQuery}`,
+      `/walkAndBikeScore?${accessQuery}`,
+      `/walk_and_bike_score?${accessQuery}`,
       `/mainHouseInfoPanelInfo?${accessQuery}`,
       `/main_house_info_panel_info?${accessQuery}`,
       `/property/details?${idQuery}`,
     ]
 
-    for (const path of enrichPaths) {
-      data = await tryRedfinMerge(data, HOSTS.redfin, path, apiKey)
+    const extras = await Promise.all(
+      enrichPaths.map((path) => tryRedfinMerge({}, HOSTS.redfin, path, apiKey)),
+    )
+    for (const extra of extras) {
+      data = mergeRecordFields(data, extra)
     }
   }
 
@@ -1539,6 +1635,13 @@ export async function importListingFromUrl(url: string, keys: PortalApiKeys | st
   }
 
   let listing = await fetchListing(trimmed, source, apiKey)
+
+  if (source === 'redfin' && listing.images.length) {
+    const reachable = await probeReachablePhotos(listing.images.map((img) => img.src))
+    if (reachable.length) {
+      listing = syncLifestyleFromImages({ ...listing, images: buildImages(reachable) })
+    }
+  }
   let usedExamplePhotos = false
   let notice = buildImportNotice(listing, source, listing.images.length)
 

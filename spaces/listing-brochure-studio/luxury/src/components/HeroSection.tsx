@@ -74,7 +74,7 @@ export function HeroSection({ listing }: { listing: Listing }) {
 
         <div className="grid gap-6 border-t border-white/15 pt-6 md:grid-cols-[1.2fr_1fr_auto] md:items-end">
           <div className="flex flex-wrap gap-x-8 gap-y-3">
-            {listing.stats.slice(0, 5).map((stat) => (
+            {listing.stats.slice(0, 6).map((stat) => (
               <div key={stat.label}>
                 <p className="text-[10px] uppercase tracking-[0.22em] text-white/50">{stat.label}</p>
                 <p className="mt-1 font-serif text-2xl text-white">{stat.value}</p>

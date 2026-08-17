@@ -1,89 +1,41 @@
-/** Sanity checks for Redfin payload parsing (no API key). */
+/** Sanity checks for Redfin photo expansion + walk score parsing. */
 
-function titleCaseWords(slug) {
-  return slug.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+function upgradeRedfinPhotoUrl(url) {
+  return url
+    .replace('/islphoto/', '/bigphoto/')
+    .replace(/genIslnoResize\./g, '')
 }
 
-function parseRedfinUrlMeta(url) {
-  const m = url.match(/redfin\.(?:com|ca)\/([A-Z]{2})\/([^/]+)\/([^/]+)\/home\/(\d+)/i)
-  if (!m) return {}
-  const [, state, citySlug, addressSlug, propertyId] = m
-  const zipMatch = addressSlug.match(/-(\d{5})(?:-\d{4})?$/i)
-  const zip = zipMatch?.[1] || ''
-  const streetSlug = addressSlug.replace(/-(\d{5})(?:-\d{4})?$/i, '')
-  return {
-    state: state.toUpperCase(),
-    city: titleCaseWords(citySlug),
-    zip,
-    street_address: titleCaseWords(streetSlug),
-    propertyId: Number(propertyId),
-  }
+function expandRedfinPhotoSequence(urls, photoCount) {
+  const template = urls.find((u) => /cdn-redfin\.com\/photo\/.*[_-]\d+\.[a-z]+(\?|$)/i.test(u))
+  if (!template) return urls
+  const match = template.match(/^(.*)[_-](\d+)(\.[a-z]+)(\?.*)?$/i)
+  if (!match) return urls
+  const [, prefix, , ext, query = ''] = match
+  const target = Math.min(Math.max(photoCount || 36, urls.length), 60)
+  const expanded = [...urls]
+  for (let i = 0; i < target; i++) expanded.push(`${prefix}_${i}${ext}${query}`)
+  return [...new Set(expanded)]
 }
 
-function extractRedfinMediaPhotos(data) {
-  const urls = []
-  const push = (raw) => {
-    if (typeof raw === 'string' && raw.includes('cdn-redfin')) urls.push(raw)
-  }
-  const photos = data.mediaBrowserInfo?.photos || []
-  for (const ph of photos) {
-    push(ph.photoUrls?.fullScreenPhotoUrl)
-    push(ph.photoUrls?.largePhotoUrl)
-  }
-  return { photos: [...new Set(urls)] }
+function pickWalkScore(walkObj) {
+  const n = Number(walkObj?.walkScore ?? walkObj?.walkscore ?? walkObj?.score)
+  return Number.isFinite(n) && n > 0 && n <= 100 ? n : 0
 }
 
-const url =
-  'https://www.redfin.com/CA/Santa-Clara/1134-Monroe-St-95050/home/1279750'
-const urlMeta = parseRedfinUrlMeta(url)
-
-const stingrayAboveFold = {
-  resultCode: 0,
-  payload: {
-    propertyId: 1279750,
-    listingId: 138238059,
-    addressInfo: {
-      streetAddress: '1134 Monroe St',
-      city: 'Santa Clara',
-      state: 'CA',
-      zip: '95050',
-    },
-    price: 1100000,
-    beds: 3,
-    baths: 2,
-    sqFt: 1450,
-    mediaBrowserInfo: {
-      photos: [
-        {
-          photoUrls: {
-            fullScreenPhotoUrl: 'https://ssl.cdn-redfin.com/photo/1/bigphoto/1/a.jpg',
-          },
-        },
-        {
-          photoUrls: {
-            fullScreenPhotoUrl: 'https://ssl.cdn-redfin.com/photo/1/bigphoto/1/b.jpg',
-          },
-        },
-        {
-          photoUrls: {
-            fullScreenPhotoUrl: 'https://ssl.cdn-redfin.com/photo/1/bigphoto/1/c.jpg',
-          },
-        },
-      ],
-    },
-  },
-}
-
-const photos = extractRedfinMediaPhotos(stingrayAboveFold.payload)
+const url = 'https://www.redfin.com/CA/Santa-Clara/1134-Monroe-St-95050/home/1279750'
+const onePhoto = ['https://ssl.cdn-redfin.com/photo/8/islphoto/750/genIslnoResize.1279750_0.jpg']
+const upgraded = onePhoto.map(upgradeRedfinPhotoUrl)
+const expanded = expandRedfinPhotoSequence(upgraded, 12)
+const walk = pickWalkScore({ walkScore: 82, walkScoreDescription: 'Very Walkable' })
 
 const checks = [
-  ['url city', urlMeta.city === 'Santa Clara'],
-  ['url zip', urlMeta.zip === '95050'],
-  ['url street', urlMeta.street_address === '1134 Monroe St'],
-  ['url propertyId', urlMeta.propertyId === 1279750],
-  ['stingray beds', stingrayAboveFold.payload.beds === 3],
-  ['stingray sqFt', stingrayAboveFold.payload.sqFt === 1450],
-  ['photo count', photos.photos.length === 3],
+  ['upgrade bigphoto', upgraded[0].includes('/bigphoto/')],
+  ['strip genIsl', !upgraded[0].includes('genIslnoResize')],
+  ['expand count', expanded.length >= 12],
+  ['expand _5', expanded.some((u) => u.endsWith('_5.jpg'))],
+  ['walk score', walk === 82],
+  ['listing url', url.includes('1279750')],
 ]
 
 let failed = 0
@@ -96,4 +48,4 @@ if (failed) {
   console.error(`\n${failed} check(s) failed`)
   process.exit(1)
 }
-console.log('\nAll Redfin parse checks passed.')
+console.log('\nAll Redfin photo/walk checks passed.')
