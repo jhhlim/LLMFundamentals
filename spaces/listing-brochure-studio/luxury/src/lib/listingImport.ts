@@ -553,33 +553,9 @@ async function rapidGet(host: string, path: string, apiKey: string): Promise<Rec
 }
 
 async function fetchCompassRaw(url: string, apiKey: string): Promise<Record<string, unknown>> {
-  // PullAPI primary endpoint; try a couple of path aliases if the first returns sparse photos.
-  const paths = [
-    `/compass/property?url=${encodeURIComponent(url)}`,
-    `/compass/property-details?url=${encodeURIComponent(url)}`,
-    `/property?url=${encodeURIComponent(url)}`,
-  ]
-  let lastErr: Error | null = null
-  let best: Record<string, unknown> | null = null
-  let bestPhotoCount = -1
-
-  for (const path of paths) {
-    try {
-      const json = await rapidGet(HOSTS.compass, path, apiKey)
-      const data = (json.data || json.property || json) as Record<string, unknown>
-      const count = extractCompassPhotos(data).length
-      if (count > bestPhotoCount) {
-        best = data
-        bestPhotoCount = count
-      }
-      if (count >= 3) return data
-    } catch (err) {
-      lastErr = err instanceof Error ? err : new Error(String(err))
-    }
-  }
-
-  if (best) return best
-  throw lastErr || new Error('Compass property fetch failed.')
+  const path = `/compass/property?url=${encodeURIComponent(url)}`
+  const json = await rapidGet(HOSTS.compass, path, apiKey)
+  return (json.data || json.property || json) as Record<string, unknown>
 }
 
 async function fetchCompass(url: string, apiKey: string): Promise<Listing> {
