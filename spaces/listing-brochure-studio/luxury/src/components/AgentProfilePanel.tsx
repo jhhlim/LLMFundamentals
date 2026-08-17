@@ -48,7 +48,7 @@ export function AgentProfilePanel({
 
   return (
     <div className="no-print fixed inset-0 z-[70] flex items-end justify-center bg-ink/45 p-4 backdrop-blur-sm md:items-center">
-      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[1.5rem] bg-paper p-5 shadow-2xl md:p-7">
+      <div className="editor-sheet max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[1.5rem] bg-paper p-5 text-ink shadow-2xl md:p-7">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="eyebrow">Agent profile</p>
@@ -85,7 +85,7 @@ export function AgentProfilePanel({
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Save profile
           </button>
-          <button type="button" className="rounded-full px-4 py-2.5 text-sm text-stone hover:bg-warm" onClick={onClose}>
+          <button type="button" className="rounded-full px-4 py-2.5 text-sm font-medium text-ink/70 hover:bg-warm hover:text-ink" onClick={onClose}>
             Cancel
           </button>
         </div>

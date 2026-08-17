@@ -110,7 +110,7 @@ export function EditFactsPanel({
 
   return (
     <div className="no-print fixed inset-0 z-[60] flex items-end justify-center bg-ink/45 p-4 backdrop-blur-sm md:items-center">
-      <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-[1.5rem] bg-paper p-5 shadow-2xl md:p-7">
+      <div className="editor-sheet max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-[1.5rem] bg-paper p-5 text-ink shadow-2xl md:p-7">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="eyebrow">Edit brochure</p>
@@ -139,7 +139,7 @@ export function EditFactsPanel({
             type="button"
             onClick={() => setTab('facts')}
             className={`rounded-full px-4 py-2 text-sm font-medium ${
-              tab === 'facts' ? 'bg-ink text-white' : 'bg-warm text-ink hover:bg-stone-light/40'
+              tab === 'facts' ? 'bg-accent text-white' : 'bg-warm text-ink hover:bg-stone-light/40'
             }`}
           >
             Facts & copy
@@ -208,7 +208,7 @@ export function EditFactsPanel({
                   <label className="block border-t border-stone-light/40 px-3 py-2 text-xs">
                     <span className="mb-1 block font-semibold text-stone">Caption</span>
                     <input
-                      className="w-full rounded-lg border border-stone-light/50 bg-paper px-2 py-1.5 text-sm"
+                      className="w-full rounded-lg border border-stone-light/50 bg-paper px-2 py-1.5 text-sm text-ink placeholder:text-stone"
                       value={img.alt}
                       onChange={(e) => {
                         const next = draft.images.map((row, i) =>
@@ -244,7 +244,7 @@ export function EditFactsPanel({
               </div>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <input
-                  className="flex-1 rounded-xl border border-stone-light/60 bg-paper px-3 py-2 text-sm"
+                  className="flex-1 rounded-xl border border-stone-light/60 bg-paper px-3 py-2 text-sm text-ink placeholder:text-stone"
                   placeholder="Paste image URL (Compass CDN or MLS photo link)"
                   value={photoUrl}
                   onChange={(e) => setPhotoUrl(e.target.value)}
@@ -269,123 +269,125 @@ export function EditFactsPanel({
         )}
 
         {tab === 'facts' && (
-          <>
-            <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              <label className="text-sm">
-                <span className="mb-1 block font-semibold">Address</span>
+          <div className="mt-6 rounded-2xl border border-accent/20 bg-[#e8f2f3] p-4 text-ink md:p-5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">Facts & copy</p>
+            <p className="mt-1 text-sm text-ink/70">Update beds, baths, price, and the brochure description.</p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <label className="text-sm text-ink">
+                <span className="mb-1 block font-semibold text-ink">Address</span>
                 <input
-                  className="w-full rounded-xl border border-stone-light/60 bg-white px-3 py-2"
+                  className="fact-field w-full"
                   value={draft.address}
                   onChange={(e) => setDraft({ ...draft, address: e.target.value })}
                 />
               </label>
-              <label className="text-sm">
-                <span className="mb-1 block font-semibold">Neighborhood</span>
+              <label className="text-sm text-ink">
+                <span className="mb-1 block font-semibold text-ink">Neighborhood</span>
                 <input
-                  className="w-full rounded-xl border border-stone-light/60 bg-white px-3 py-2"
+                  className="fact-field w-full"
                   value={draft.neighborhood}
                   onChange={(e) => setDraft({ ...draft, neighborhood: e.target.value })}
                 />
               </label>
-              <label className="text-sm">
-                <span className="mb-1 block font-semibold">City</span>
+              <label className="text-sm text-ink">
+                <span className="mb-1 block font-semibold text-ink">City</span>
                 <input
-                  className="w-full rounded-xl border border-stone-light/60 bg-white px-3 py-2"
+                  className="fact-field w-full"
                   value={draft.city}
                   onChange={(e) => setDraft({ ...draft, city: e.target.value })}
                 />
               </label>
-              <label className="text-sm">
-                <span className="mb-1 block font-semibold">State / ZIP</span>
+              <label className="text-sm text-ink">
+                <span className="mb-1 block font-semibold text-ink">State / ZIP</span>
                 <div className="flex gap-2">
                   <input
-                    className="w-20 rounded-xl border border-stone-light/60 bg-white px-3 py-2"
+                    className="fact-field w-20"
                     value={draft.state}
                     onChange={(e) => setDraft({ ...draft, state: e.target.value })}
                     placeholder="CA"
                   />
                   <input
-                    className="flex-1 rounded-xl border border-stone-light/60 bg-white px-3 py-2"
+                    className="fact-field flex-1"
                     value={draft.zip}
                     onChange={(e) => setDraft({ ...draft, zip: e.target.value })}
                     placeholder="95125"
                   />
                 </div>
               </label>
-              <label className="text-sm">
-                <span className="mb-1 block font-semibold">Price</span>
+              <label className="text-sm text-ink">
+                <span className="mb-1 block font-semibold text-ink">Price</span>
                 <input
-                  className="w-full rounded-xl border border-stone-light/60 bg-white px-3 py-2"
+                  className="fact-field w-full"
                   value={draft.price}
                   onChange={(e) => setDraft({ ...draft, price: e.target.value })}
                 />
               </label>
-              <label className="text-sm">
-                <span className="mb-1 block font-semibold">Headline</span>
+              <label className="text-sm text-ink">
+                <span className="mb-1 block font-semibold text-ink">Headline</span>
                 <input
-                  className="w-full rounded-xl border border-stone-light/60 bg-white px-3 py-2"
+                  className="fact-field w-full"
                   value={draft.headline}
                   onChange={(e) => setDraft({ ...draft, headline: e.target.value })}
                 />
               </label>
-              <label className="text-sm">
-                <span className="mb-1 block font-semibold">Bedrooms</span>
+              <label className="text-sm text-ink">
+                <span className="mb-1 block font-semibold text-ink">Bedrooms</span>
                 <input
-                  className="w-full rounded-xl border border-stone-light/60 bg-white px-3 py-2"
+                  className="fact-field w-full"
                   value={getStat('Bedrooms') === '—' ? '' : getStat('Bedrooms')}
                   onChange={(e) => setStat('Bedrooms', e.target.value)}
                   placeholder="e.g. 4"
                 />
               </label>
-              <label className="text-sm">
-                <span className="mb-1 block font-semibold">Bathrooms</span>
+              <label className="text-sm text-ink">
+                <span className="mb-1 block font-semibold text-ink">Bathrooms</span>
                 <input
-                  className="w-full rounded-xl border border-stone-light/60 bg-white px-3 py-2"
+                  className="fact-field w-full"
                   value={getStat('Bathrooms') === '—' ? '' : getStat('Bathrooms')}
                   onChange={(e) => setStat('Bathrooms', e.target.value)}
                   placeholder="e.g. 3"
                 />
               </label>
-              <label className="text-sm">
-                <span className="mb-1 block font-semibold">Living Area</span>
+              <label className="text-sm text-ink">
+                <span className="mb-1 block font-semibold text-ink">Living Area</span>
                 <input
-                  className="w-full rounded-xl border border-stone-light/60 bg-white px-3 py-2"
+                  className="fact-field w-full"
                   value={getStat('Living Area') === '—' ? '' : getStat('Living Area')}
                   onChange={(e) => setStat('Living Area', e.target.value)}
                   placeholder="e.g. 2,450 SF"
                 />
               </label>
-              <label className="text-sm">
-                <span className="mb-1 block font-semibold">Lot Size</span>
+              <label className="text-sm text-ink">
+                <span className="mb-1 block font-semibold text-ink">Lot Size</span>
                 <input
-                  className="w-full rounded-xl border border-stone-light/60 bg-white px-3 py-2"
+                  className="fact-field w-full"
                   value={getStat('Lot Size') === '—' ? '' : getStat('Lot Size')}
                   onChange={(e) => setStat('Lot Size', e.target.value)}
                   placeholder="e.g. 6,100 SF"
                 />
               </label>
-              <label className="text-sm">
-                <span className="mb-1 block font-semibold">Garage</span>
+              <label className="text-sm text-ink">
+                <span className="mb-1 block font-semibold text-ink">Garage</span>
                 <input
-                  className="w-full rounded-xl border border-stone-light/60 bg-white px-3 py-2"
+                  className="fact-field w-full"
                   value={getStat('Garage') === '—' ? '' : getStat('Garage')}
                   onChange={(e) => setStat('Garage', e.target.value)}
                   placeholder="e.g. 2 Car"
                 />
               </label>
-              <label className="text-sm">
-                <span className="mb-1 block font-semibold">Year Built</span>
+              <label className="text-sm text-ink">
+                <span className="mb-1 block font-semibold text-ink">Year Built</span>
                 <input
-                  className="w-full rounded-xl border border-stone-light/60 bg-white px-3 py-2"
+                  className="fact-field w-full"
                   value={getStat('Year Built') === '—' ? '' : getStat('Year Built')}
                   onChange={(e) => setStat('Year Built', e.target.value)}
                   placeholder="e.g. 2019"
                 />
               </label>
-              <label className="text-sm">
-                <span className="mb-1 block font-semibold">Walk Score</span>
+              <label className="text-sm text-ink">
+                <span className="mb-1 block font-semibold text-ink">Walk Score</span>
                 <input
-                  className="w-full rounded-xl border border-stone-light/60 bg-white px-3 py-2"
+                  className="fact-field w-full"
                   type="number"
                   min={0}
                   max={100}
@@ -403,15 +405,15 @@ export function EditFactsPanel({
               </label>
             </div>
 
-            <label className="mt-3 block text-sm">
-              <span className="mb-1 block font-semibold">About / description</span>
+            <label className="mt-3 block text-sm text-ink">
+              <span className="mb-1 block font-semibold text-ink">About / description</span>
               <textarea
-                className="min-h-28 w-full rounded-xl border border-stone-light/60 bg-white px-3 py-2"
+                className="fact-field min-h-28 w-full"
                 value={draft.about}
                 onChange={(e) => setDraft({ ...draft, about: e.target.value })}
               />
             </label>
-          </>
+          </div>
         )}
 
         <div className="mt-5 flex flex-wrap gap-3">
@@ -425,7 +427,11 @@ export function EditFactsPanel({
           >
             Apply to brochure
           </button>
-          <button type="button" className="rounded-full px-4 py-2.5 text-sm text-stone hover:bg-warm" onClick={onClose}>
+          <button
+            type="button"
+            className="rounded-full px-4 py-2.5 text-sm font-medium text-ink/70 hover:bg-warm hover:text-ink"
+            onClick={onClose}
+          >
             Cancel
           </button>
         </div>
