@@ -48,6 +48,7 @@ export function ImportPanel({
 }) {
   const [url, setUrl] = useState('')
   const [keys, setKeys] = useState<PortalApiKeys>(() => loadPortalApiKeys())
+  const [sharedKey, setSharedKey] = useState('')
   const [status, setStatus] = useState(
     'Paste a Compass, Zillow, or Redfin listing URL — add the matching RapidAPI key below.',
   )
@@ -117,9 +118,37 @@ export function ImportPanel({
           <details className="mt-5 rounded-2xl border border-white/10 bg-black/20 px-4 py-3" open>
             <summary className="cursor-pointer text-sm text-white/80">RapidAPI keys (one per portal)</summary>
             <p className="mt-2 text-xs leading-relaxed text-white/50">
-              Keys stay in this browser session only. Subscribe to each RapidAPI product you use — the same RapidAPI
-              account key works once you are subscribed to that API.
+              RapidAPI gives you <strong className="text-white/70">one account key</strong> — paste the same key in
+              each field below if you are subscribed to that portal&apos;s API product on RapidAPI. Only fill the
+              portals you use (e.g. Compass only if you only paste Compass URLs).
             </p>
+
+            <div className="mt-4 rounded-xl border border-gold/20 bg-gold/5 px-3 py-3">
+              <label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gold-soft">
+                Quick fill — same key for all
+              </label>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <input
+                  type="password"
+                  value={sharedKey}
+                  onChange={(e) => setSharedKey(e.target.value)}
+                  placeholder="Paste your RapidAPI key once"
+                  className="min-w-[12rem] flex-1 rounded-lg border border-white/10 bg-white/10 px-3 py-2 text-sm outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const k = sharedKey.trim()
+                    if (!k) return
+                    setKeys({ compass: k, zillow: k, redfin: k })
+                  }}
+                  className="rounded-lg bg-gold px-4 py-2 text-sm font-semibold text-ink transition hover:bg-gold-soft"
+                >
+                  Apply to all
+                </button>
+              </div>
+            </div>
+
             <div className="mt-4 space-y-3">
               <KeyField
                 label="Compass"
