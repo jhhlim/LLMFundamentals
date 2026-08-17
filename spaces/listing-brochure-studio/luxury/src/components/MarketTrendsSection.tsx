@@ -95,8 +95,10 @@ export function MarketTrendsSection({ listing }: { listing: Listing }) {
           </div>
         ) : (
           <p className="mt-10 max-w-xl text-sm leading-relaxed text-stone dark:text-stone-light/70">
-            Import a listing with a Zillow RapidAPI key subscribed to zillow-com1 to fill this page from recently sold
-            and for-sale search in the same ZIP. Redfin similar homes are used when a Redfin property ID is available.
+            Re-import the listing after confirming your RapidAPI key is subscribed to{' '}
+            <strong className="text-ink dark:text-white/85">zillow-com1</strong> (propertyExtendedSearch /
+            propertyComps) or Redfin similar-home endpoints. Market data loads during import — use New URL and
+            generate again if this page is empty.
           </p>
         )}
 

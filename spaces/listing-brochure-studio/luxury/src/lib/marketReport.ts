@@ -51,10 +51,11 @@ function detectStatus(raw: Record<string, unknown>, fallback?: CompStatus): Comp
     .map((v) => asString(v).toLowerCase())
     .join(' ')
   if (/pending|contingent|under contract/.test(blob)) return 'pending'
+  if (/recently.?sold|recently_sold/.test(blob)) return 'sold'
   if (/sold|sale closed|closed/.test(blob) || raw.soldDate || raw.dateSold || raw.dateSoldString) {
-    if (!/for sale|listed|active/.test(blob) || /recently.?sold/.test(blob)) return 'sold'
+    if (!/for sale|listed|active|for_sale/.test(blob)) return 'sold'
   }
-  if (/for.?sale|listed|active|coming soon|new listing/.test(blob)) return 'listed'
+  if (/for.?sale|for_sale|listed|active|coming soon|new listing/.test(blob)) return 'listed'
   return fallback || 'listed'
 }
 
@@ -106,23 +107,42 @@ function cityOf(raw: Record<string, unknown>): string {
 
 export function normalizeComp(raw: Record<string, unknown>, fallbackStatus?: CompStatus): MarketComp | null {
   const address = addressOf(raw)
-  const price = money(raw.price || raw.unformattedPrice || raw.listPrice || raw.soldPrice || raw.lastSoldPrice || raw.priceInfo)
-  if (!address || address === 'Address on request') {
-    if (!price) return null
-  }
+  const price = money(
+    raw.price ||
+      raw.unformattedPrice ||
+      raw.extracted_price ||
+      raw.listPrice ||
+      raw.soldPrice ||
+      raw.lastSoldPrice ||
+      raw.priceInfo,
+  )
+  if ((!address || address === 'Address on request') && !price) return null
   const status = detectStatus(raw, fallbackStatus)
-  const sqftN = num(raw.livingArea || raw.sqft || raw.sqFt || raw.squareFeet || raw.livingAreaValue)
+  const sqftN = num(
+    raw.livingArea ||
+      raw.sqft ||
+      raw.sqFt ||
+      raw.squareFeet ||
+      raw.livingAreaValue ||
+      raw.area,
+  )
   const priceN = priceNum(price)
   const ppsf = sqftN && priceN ? `$${Math.round(priceN / sqftN).toLocaleString()}` : ''
   const beds = num(raw.bedrooms || raw.beds || raw.bed)
   const baths = num(raw.bathrooms || raw.baths || raw.bath)
-  const photo = asString(
-    raw.imgSrc || raw.image || raw.photo || raw.primaryPhoto || (Array.isArray(raw.photos) ? raw.photos[0] : ''),
-  )
-  const url = asString(raw.detailUrl || raw.url || raw.hdpUrl || raw.listingUrl || raw.href)
+  const photoRaw =
+    raw.imgSrc ||
+    raw.image ||
+    raw.photo ||
+    raw.primaryPhoto ||
+    raw.thumbnail ||
+    (Array.isArray(raw.photos) ? raw.photos[0] : '') ||
+    (Array.isArray(raw.images) ? raw.images[0] : '')
+  const photo = asString(photoRaw)
+  const url = asString(raw.detailUrl || raw.url || raw.hdpUrl || raw.link || raw.listingUrl || raw.href)
 
   return {
-    address,
+    address: address && address !== 'Address on request' ? address : 'Address on request',
     city: cityOf(raw),
     status,
     price: price || 'Price on request',
@@ -131,7 +151,7 @@ export function normalizeComp(raw: Record<string, unknown>, fallbackStatus?: Com
     sqft: sqftN != null ? `${Math.round(sqftN).toLocaleString()} SF` : '—',
     dateLabel: dateLabel(raw, status),
     pricePerSqft: ppsf ? `${ppsf}/SF` : '—',
-    photo: typeof photo === 'string' && photo.startsWith('http') ? photo : '',
+    photo: photo.startsWith('http') ? photo : '',
     url,
   }
 }
@@ -146,10 +166,45 @@ const ARRAY_KEYS = [
   'similarHomes',
   'similarListings',
   'nearbyHomes',
+  'nearbySales',
+  'comparables',
   'solds',
   'forSale',
+  'recentlySold',
   'data',
+  'searchResults',
 ]
+
+function looksLikeProperty(raw: Record<string, unknown>): boolean {
+  const hasPrice = Boolean(
+    raw.price || raw.unformattedPrice || raw.extracted_price || raw.listPrice || raw.soldPrice,
+  )
+  const addr = addressOf(raw)
+  const hasAddr = addr && addr !== 'Address on request'
+  return hasPrice && (hasAddr || raw.zpid != null)
+}
+
+function deepCollectRecords(payload: unknown, into: Record<string, unknown>[], depth = 0) {
+  if (!payload || depth > 7) return
+  if (Array.isArray(payload)) {
+    for (const item of payload) {
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
+        const rec = item as Record<string, unknown>
+        if (looksLikeProperty(rec)) into.push(rec)
+        else deepCollectRecords(rec, into, depth + 1)
+      }
+    }
+    return
+  }
+  if (typeof payload !== 'object') return
+  const obj = payload as Record<string, unknown>
+  for (const key of ARRAY_KEYS) {
+    if (obj[key] != null) collectRecords(obj[key], into, depth + 1)
+  }
+  for (const value of Object.values(obj)) {
+    if (value && typeof value === 'object') deepCollectRecords(value, into, depth + 1)
+  }
+}
 
 function collectRecords(payload: unknown, into: Record<string, unknown>[], depth = 0) {
   if (!payload || depth > 5) return
@@ -169,6 +224,7 @@ function collectRecords(payload: unknown, into: Record<string, unknown>[], depth
 export function compsFromPayload(payload: unknown, fallbackStatus?: CompStatus): MarketComp[] {
   const records: Record<string, unknown>[] = []
   collectRecords(payload, records)
+  deepCollectRecords(payload, records)
   const seen = new Set<string>()
   const comps: MarketComp[] = []
   for (const rec of records) {
@@ -207,13 +263,19 @@ export function buildMarketReport(
   const listed = nearby.filter((c) => c.status === 'listed' || c.status === 'pending')
   const soldPrices = sold.map((c) => priceNum(c.price)).filter((n): n is number => n != null)
   const listPrices = listed.map((c) => priceNum(c.price)).filter((n): n is number => n != null)
-  const ppsf = nearby
-    .map((c) => num(c.pricePerSqft))
+  const ppsfValues = nearby
+    .map((c) => {
+      const fromLabel = num(c.pricePerSqft)
+      if (fromLabel) return fromLabel
+      const p = priceNum(c.price)
+      const sq = num(c.sqft)
+      return p && sq ? p / sq : null
+    })
     .filter((n): n is number => n != null)
 
   const medSold = median(soldPrices)
   const medList = median(listPrices)
-  const avgPpsf = ppsf.length ? Math.round(ppsf.reduce((a, b) => a + b, 0) / ppsf.length) : null
+  const avgPpsf = ppsfValues.length ? Math.round(ppsfValues.reduce((a, b) => a + b, 0) / ppsfValues.length) : null
 
   const picked = [
     ...sold.slice(0, 6),
