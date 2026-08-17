@@ -124,6 +124,234 @@ function pickNumber(data: Record<string, unknown>, paths: string[]): number | nu
   return null
 }
 
+/** Merge nested Compass payload shapes into one lookup object (PullAPI + alternate scrapers). */
+function unwrapCompassPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  let data: Record<string, unknown> = payload
+  if (data.data && typeof data.data === 'object' && !Array.isArray(data.data)) {
+    data = data.data as Record<string, unknown>
+  }
+  if (data.property && typeof data.property === 'object' && !Array.isArray(data.property)) {
+    const nested = data.property as Record<string, unknown>
+    data = { ...data, ...nested }
+  }
+  if (data.listing && typeof data.listing === 'object' && !Array.isArray(data.listing)) {
+    const nested = data.listing as Record<string, unknown>
+    data = { ...data, ...nested }
+  }
+  if (data.details && typeof data.details === 'object' && !Array.isArray(data.details)) {
+    const nested = data.details as Record<string, unknown>
+    data = { ...data, ...nested }
+  }
+  if (data.building && typeof data.building === 'object' && !Array.isArray(data.building)) {
+    const building = data.building as Record<string, unknown>
+    data = { ...data, ...building, building }
+  }
+  if (data.size && typeof data.size === 'object' && !Array.isArray(data.size)) {
+    const size = data.size as Record<string, unknown>
+    data = { ...data, ...size, size }
+  }
+  return data
+}
+
+const BED_KEYS = new Set(['beds', 'bedrooms', 'beds_total', 'numbedrooms', 'bedroomstotal', 'bedroomcount'])
+const BATH_KEYS = new Set(['baths', 'bathrooms', 'baths_total', 'numbathrooms', 'bathroomstotal', 'bathroomcount'])
+const SQFT_KEYS = new Set([
+  'sqft',
+  'living_area_sqft',
+  'living_area',
+  'square_feet',
+  'livingarea',
+  'building_size',
+  'squarefootage',
+  'interior_sqft',
+])
+const LOT_KEYS = new Set([
+  'lot_size_sqft',
+  'lot_size',
+  'lotsqft',
+  'lotsize',
+  'lot_sqft',
+  'lotsquarefeet',
+  'land_area',
+  'land_area_sqft',
+  'parcel_size',
+])
+const LOT_ACRE_KEYS = new Set(['lot_acres', 'lotacres', 'acres', 'lotsizeacres', 'land_area_acres'])
+
+/** Walk nested JSON for the first positive numeric value on known field names. */
+function findNumberByKeys(obj: unknown, keys: Set<string>, depth = 0): number | null {
+  if (depth > 8 || obj == null) return null
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const found = findNumberByKeys(item, keys, depth + 1)
+      if (found != null) return found
+    }
+    return null
+  }
+  if (typeof obj !== 'object') return null
+
+  const record = obj as Record<string, unknown>
+  for (const [key, value] of Object.entries(record)) {
+    if (keys.has(key.toLowerCase())) {
+      const n = toNumber(value)
+      if (n != null && n > 0) return n
+    }
+  }
+  for (const value of Object.values(record)) {
+    if (value && typeof value === 'object') {
+      const found = findNumberByKeys(value, keys, depth + 1)
+      if (found != null) return found
+    }
+  }
+  return null
+}
+
+/** Collect human-readable fact strings from amenities, key_facts objects, and description. */
+function collectTextBlobs(data: Record<string, unknown>): string[] {
+  const blobs: string[] = []
+
+  const pushFacts = (value: unknown) => {
+    if (!value) return
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (typeof item === 'string') {
+          blobs.push(item)
+        } else if (item && typeof item === 'object') {
+          const obj = item as Record<string, unknown>
+          const label = asString(obj.label || obj.name || obj.title || obj.key)
+          const val = asString(obj.value || obj.text || obj.content || obj.amount)
+          if (label && val) blobs.push(`${label}: ${val}`)
+          else blobs.push(...asList(item))
+        }
+      }
+      return
+    }
+    blobs.push(...asList(value))
+  }
+
+  pushFacts(data.amenities || data.features || data.highlights || data.key_features)
+  pushFacts(data.keyFacts || data.key_facts || data.facts || data.propertyFacts || data.listing_facts)
+  pushFacts(data.summary || data.size)
+
+  const description = asString(dig(data, ['description', 'remarks', 'public_remarks', 'overview']))
+  if (description) blobs.push(description)
+
+  return blobs.filter(Boolean)
+}
+
+type PropertyStats = {
+  beds: number | null
+  baths: number | null
+  sqft: number | null
+  lot: number | null
+  built: number | null
+}
+
+/** Extract beds, baths, sqft, lot, year built from documented + nested Compass API fields. */
+export function extractPropertyStats(data: Record<string, unknown>): PropertyStats {
+  const textBlobs = collectTextBlobs(data)
+
+  const beds =
+    pickNumber(data, ['beds', 'bedrooms', 'beds_total', 'numBedrooms', 'bedroomsTotal', 'property.beds']) ??
+    findNumberByKeys(data, BED_KEYS) ??
+    matchFromText(textBlobs, [
+      /(\d+(?:\.\d+)?)\s*(?:bed(?:room)?s?|br|bd)\b/i,
+      /bedrooms?\s*[:#]?\s*(\d+(?:\.\d+)?)/i,
+    ])
+
+  const bathsDirect =
+    pickNumber(data, ['baths', 'bathrooms', 'baths_total', 'numBathrooms', 'bathroomsTotal', 'property.baths']) ??
+    findNumberByKeys(data, BATH_KEYS)
+
+  const bathsFull = pickNumber(data, ['bathsFull', 'full_baths', 'bathroomsFull', 'fullBaths'])
+  const bathsHalf = pickNumber(data, ['bathsHalf', 'half_baths', 'bathroomsHalf', 'partialBaths', 'halfBaths'])
+
+  let baths = bathsDirect
+  if (baths == null && bathsFull != null) {
+    baths = bathsHalf != null ? bathsFull + bathsHalf * 0.5 : bathsFull
+  }
+  if (baths == null) {
+    baths = matchFromText(textBlobs, [
+      /(\d+(?:\.\d+)?)\s*(?:bath(?:room)?s?|ba)\b/i,
+      /bathrooms?\s*[:#]?\s*(\d+(?:\.\d+)?)/i,
+    ])
+  }
+
+  let sqft =
+    pickNumber(data, [
+      'sqft',
+      'living_area_sqft',
+      'living_area',
+      'square_feet',
+      'livingArea',
+      'building_size',
+      'squareFootage',
+      'interior_sqft',
+      'size.squareFeet',
+      'size.livingArea',
+      'property.livingArea',
+      'building.sqft',
+      'building.living_area',
+    ]) ??
+    findNumberByKeys(data, SQFT_KEYS) ??
+    matchFromText(textBlobs, [
+      /([\d,]+)\s*(?:sq\.?\s*ft\.?|sqft|sf\b|square feet)/i,
+      /living area\s*[:#]?\s*([\d,]+)/i,
+      /interior\s*[:#]?\s*([\d,]+)\s*(?:sq|sf)/i,
+    ])
+
+  let lot =
+    pickNumber(data, [
+      'lot_size_sqft',
+      'lot_size',
+      'lotSqFt',
+      'lotSize',
+      'lot_sqft',
+      'lotSquareFeet',
+      'land_area_sqft',
+      'land_area',
+      'parcel_size',
+      'size.lotSize',
+      'property.lotSize',
+      'building.lot_size',
+      'building.lotSize',
+    ]) ??
+    findNumberByKeys(data, LOT_KEYS) ??
+    matchFromText(textBlobs, [
+      /lot(?:\s*size)?\s*[:#]?\s*([\d,]+)\s*(?:sq\.?\s*ft\.?|sqft|sf\b)/i,
+      /([\d,]+)\s*(?:sq\.?\s*ft\.?|sf\b)\s*lot/i,
+      /([\d,]+)\s*(?:lot|lot size)/i,
+    ])
+
+  const lotAcres =
+    pickNumber(data, ['lot_acres', 'lotAcres', 'acres', 'lotSizeAcres', 'land_area_acres']) ??
+    findNumberByKeys(data, LOT_ACRE_KEYS) ??
+    matchFromText(textBlobs, [/([\d.]+)\s*acres?\b/i, /lot\s*[:#]?\s*([\d.]+)\s*acres?/i])
+
+  if ((lot == null || lot < 100) && lotAcres != null) {
+    lot = Math.round(lotAcres * 43560)
+  }
+
+  const built =
+    pickNumber(data, [
+      'year_built',
+      'yearBuilt',
+      'building.year_built',
+      'building.yearBuilt',
+      'year',
+      'built_year',
+    ]) ??
+    matchFromText(textBlobs, [/built\s*(?:in)?\s*[:#]?\s*(\d{4})/i, /(\d{4})\s*built/i, /year built\s*[:#]?\s*(\d{4})/i])
+
+  return {
+    beds,
+    baths: baths != null ? Math.round(baths * 10) / 10 : null,
+    sqft,
+    lot,
+    built,
+  }
+}
+
 function matchFromText(blobs: string[], patterns: RegExp[]): number | null {
   for (const blob of blobs) {
     for (const pattern of patterns) {
@@ -396,7 +624,6 @@ function withJasonBrand(listing: Listing, sourceUrl: string): Listing {
 function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _source: ListingSource): Listing {
   const photos = extractCompassPhotos(data)
   const amenities = asList(data.amenities || data.features || data.highlights || data.key_features)
-  const keyFacts = asList(data.keyFacts || data.key_facts || data.facts || data.propertyFacts)
   const address = asString(
     dig(data, ['street_address', 'address', 'name', 'location.streetAddress', 'address.streetAddress']),
   )
@@ -407,64 +634,8 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _sou
   const description = asString(dig(data, ['description', 'remarks', 'public_remarks', 'overview']))
   const price = money(dig(data, ['price', 'list_price', 'listPrice', 'priceInfo.price']))
 
-  const textBlobs = [...amenities, ...keyFacts, description, asString(data.size), asString(data.summary)]
-
-  const beds =
-    pickNumber(data, ['beds', 'bedrooms', 'beds_total', 'numBedrooms', 'bedroomsTotal', 'property.beds']) ??
-    matchFromText(textBlobs, [/(\d+(?:\.\d+)?)\s*(?:bed|br|bd)\b/i, /bedrooms?\s*[:#]?\s*(\d+(?:\.\d+)?)/i])
-
-  const bathsFull = pickNumber(data, [
-    'baths',
-    'bathrooms',
-    'baths_total',
-    'numBathrooms',
-    'bathroomsTotal',
-    'bathsFull',
-    'full_baths',
-  ])
-  const bathsHalf = pickNumber(data, ['bathsHalf', 'half_baths', 'bathroomsHalf', 'partialBaths'])
-  let baths = bathsFull
-  if (bathsFull != null && bathsHalf != null) baths = bathsFull + bathsHalf * 0.5
-  if (baths == null) {
-    baths = matchFromText(textBlobs, [/(\d+(?:\.\d+)?)\s*(?:bath|ba)\b/i, /bathrooms?\s*[:#]?\s*(\d+(?:\.\d+)?)/i])
-  }
-
-  let sqft =
-    pickNumber(data, [
-      'sqft',
-      'living_area_sqft',
-      'living_area',
-      'square_feet',
-      'livingArea',
-      'building_size',
-      'size.squareFeet',
-      'size.livingArea',
-      'property.livingArea',
-    ]) ??
-    matchFromText(textBlobs, [/([\d,]+)\s*(?:sq\.?\s*ft|sqft|square feet)/i, /living area\s*[:#]?\s*([\d,]+)/i])
-
-  let lot =
-    pickNumber(data, [
-      'lot_size_sqft',
-      'lot_size',
-      'lotSqFt',
-      'lotSize',
-      'lot_sqft',
-      'lotSquareFeet',
-      'size.lotSize',
-      'property.lotSize',
-    ]) ?? matchFromText(textBlobs, [/([\d,]+)\s*(?:lot|lot size)/i, /lot size\s*[:#]?\s*([\d,.]+)\s*(?:sq|sf|acres?)?/i])
-
-  const lotAcres =
-    pickNumber(data, ['lot_acres', 'lotAcres', 'acres', 'lotSizeAcres']) ??
-    matchFromText(textBlobs, [/([\d.]+)\s*acres?/i])
-  if ((lot == null || lot < 100) && lotAcres != null) {
-    lot = Math.round(lotAcres * 43560)
-  }
-
-  const built =
-    pickNumber(data, ['year_built', 'yearBuilt', 'building.year_built', 'building.yearBuilt', 'year']) ??
-    matchFromText(textBlobs, [/built\s*[:#]?\s*(\d{4})/i, /(\d{4})\s*built/i])
+  const { beds, baths, sqft, lot, built } = extractPropertyStats(data)
+  const textBlobs = collectTextBlobs(data)
 
   const garageRaw = dig(data, ['garage', 'parking', 'garageSpaces', 'numGarageSpaces', 'parkingSpaces'])
   const garageNum =
@@ -555,7 +726,7 @@ async function rapidGet(host: string, path: string, apiKey: string): Promise<Rec
 async function fetchCompassRaw(url: string, apiKey: string): Promise<Record<string, unknown>> {
   const path = `/compass/property?url=${encodeURIComponent(url)}`
   const json = await rapidGet(HOSTS.compass, path, apiKey)
-  return (json.data || json.property || json) as Record<string, unknown>
+  return unwrapCompassPayload(json)
 }
 
 async function fetchCompass(url: string, apiKey: string): Promise<Listing> {
@@ -585,7 +756,12 @@ export async function importListingFromUrl(url: string, apiKey: string): Promise
 
   let listing = await fetchCompass(trimmed, apiKey.trim())
   let usedExamplePhotos = false
-  let notice = `Loaded from Compass via RapidAPI · ${listing.images.length} listing photo${listing.images.length === 1 ? '' : 's'} scraped.`
+  const statBits = listing.stats
+    .filter((s) => s.value && s.value !== '—')
+    .map((s) => s.label.toLowerCase())
+  const statsSummary =
+    statBits.length > 0 ? ` · ${statBits.slice(0, 4).join(', ')} from API` : ' · review stats in Edit brochure if any show —'
+  let notice = `Loaded from Compass via RapidAPI · ${listing.images.length} listing photo${listing.images.length === 1 ? '' : 's'} scraped${statsSummary}.`
 
   if (!listing.images.length) {
     usedExamplePhotos = true

@@ -70,10 +70,36 @@ def _as_str_list(value: Any) -> list[str]:
     return [str(value)]
 
 
-def normalize_compass_payload(payload: dict[str, Any]) -> Listing:
+def _unwrap_compass_payload(payload: dict[str, Any]) -> dict[str, Any]:
     data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
     if isinstance(data.get("property"), dict):
-        data = data["property"]
+        prop = data["property"]
+        data = {**data, **prop}
+    if isinstance(data.get("listing"), dict):
+        data = {**data, **data["listing"]}
+    if isinstance(data.get("building"), dict):
+        data = {**data, **data["building"], "building": data["building"]}
+    if isinstance(data.get("size"), dict):
+        data = {**data, **data["size"], "size": data["size"]}
+    return data
+
+
+def _coerce_number(value: Any) -> int | float | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    digits = re.sub(r"[^\d.]", "", str(value))
+    if not digits:
+        return None
+    try:
+        return float(digits) if "." in digits else int(digits)
+    except ValueError:
+        return None
+
+
+def normalize_compass_payload(payload: dict[str, Any]) -> Listing:
+    data = _unwrap_compass_payload(payload)
 
     photos = _as_str_list(data.get("photos")) or _as_str_list(data.get("image_url"))
     amenities = _as_str_list(data.get("amenities"))
@@ -89,9 +115,23 @@ def normalize_compass_payload(payload: dict[str, Any]) -> Listing:
     neighborhood = str(data.get("neighborhood") or "")
     description = str(data.get("description") or "")
     price = _format_price(data.get("price"))
-    beds = data.get("beds")
-    baths = data.get("baths")
-    sqft = data.get("sqft")
+    beds = _coerce_number(data.get("beds") or data.get("bedrooms"))
+    baths = _coerce_number(data.get("baths") or data.get("bathrooms"))
+    sqft = _coerce_number(
+        data.get("sqft")
+        or data.get("living_area_sqft")
+        or data.get("living_area")
+        or data.get("square_feet")
+    )
+    lot = _coerce_number(
+        data.get("lot_size_sqft")
+        or data.get("lot_size")
+        or data.get("lotSqFt")
+        or data.get("land_area_sqft")
+    )
+    lot_acres = _coerce_number(data.get("lot_acres") or data.get("acres"))
+    if (lot is None or lot < 100) and lot_acres:
+        lot = int(lot_acres * 43560)
     property_type = str(data.get("property_type") or "Single Family")
 
     bullets = amenities[:4]
@@ -106,9 +146,9 @@ def normalize_compass_payload(payload: dict[str, Any]) -> Listing:
         state=state,
         zip_code=zip_code,
         price=price,
-        beds=str(beds) if beds is not None else "",
+        beds=str(int(beds)) if isinstance(beds, float) and beds.is_integer() else str(beds or ""),
         baths=str(baths) if baths is not None else "",
-        sqft=f"{int(sqft):,}" if isinstance(sqft, (int, float)) else str(sqft or ""),
+        sqft=f"{int(sqft):,}" if isinstance(sqft, (int, float)) and sqft else str(sqft or ""),
         property_type=property_type,
         neighborhood=neighborhood,
         description=description,
