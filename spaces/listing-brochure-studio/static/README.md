@@ -15,4 +15,6 @@ Sign in with your agent profile (Compass, Keller Williams, eXp, RE/MAX, and othe
 
 **Stats scraped:** beds, baths, living area, lot size, garage, year built, walk score (when API returns them).
 
+**Market trends:** recently sold and currently listed comps in the same ZIP when a Zillow (zillow-com1) or Redfin RapidAPI key can search.
+
 Dark/Light theme toggles the full brochure surfaces. Edit brochure for photos/facts. Print/PDF with Background graphics on.
