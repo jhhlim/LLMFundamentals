@@ -6,7 +6,7 @@ colorTo: yellow
 sdk: static
 pinned: false
 license: apache-2.0
-short_description: Agent-branded luxury brochure from Compass, Zillow, or Redfin
+short_description: Agent-branded luxury brochure from listing URLs
 ---
 
 # Listing Brochure Studio
