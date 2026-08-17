@@ -6,16 +6,51 @@ const BRAND_AGENT = demoListing.agent
 
 const HOSTS = {
   compass: 'compass-com-real-estate-data-api.p.rapidapi.com',
+  zillow: 'zillow-scraper-api.p.rapidapi.com',
+  zillowAlt: 'real-time-real-estate-data.p.rapidapi.com',
+  zillow56: 'zillow56.p.rapidapi.com',
+  redfin: 'redfin-com-data-api.p.rapidapi.com',
+  redfinAlt: 'real-time-redfin-data.p.rapidapi.com',
+  redfinUnified: 'real-time-real-estate-data2.p.rapidapi.com',
 } as const
+
+export type PortalApiKeys = {
+  compass?: string
+  zillow?: string
+  redfin?: string
+}
+
+const STORAGE_KEYS = {
+  compass: 'rapidapi_key_compass',
+  zillow: 'rapidapi_key_zillow',
+  redfin: 'rapidapi_key_redfin',
+  legacy: 'rapidapi_key',
+} as const
+
+export function loadPortalApiKeys(): PortalApiKeys {
+  if (typeof sessionStorage === 'undefined') return {}
+  return {
+    compass: sessionStorage.getItem(STORAGE_KEYS.compass) || sessionStorage.getItem(STORAGE_KEYS.legacy) || '',
+    zillow: sessionStorage.getItem(STORAGE_KEYS.zillow) || '',
+    redfin: sessionStorage.getItem(STORAGE_KEYS.redfin) || '',
+  }
+}
+
+export function savePortalApiKeys(keys: PortalApiKeys) {
+  if (typeof sessionStorage === 'undefined') return
+  if (keys.compass?.trim()) sessionStorage.setItem(STORAGE_KEYS.compass, keys.compass.trim())
+  if (keys.zillow?.trim()) sessionStorage.setItem(STORAGE_KEYS.zillow, keys.zillow.trim())
+  if (keys.redfin?.trim()) sessionStorage.setItem(STORAGE_KEYS.redfin, keys.redfin.trim())
+}
 
 const IMAGE_URL_RE = /^https?:\/\/.+\.(jpe?g|png|webp|gif)(\?|$)/i
 const CDN_HINT_RE =
-  /(photos\.compass\.com|compass\.com\/.*photo|cloudfront|cloudinary|imgix|akamai|cdn-|media\.|images\.|ssl\.cdn)/i
+  /(photos\.compass\.com|photos\.zillowstatic\.com|ssl\.cdn-redfin\.com|redfin\.com\/.*photo)/i
 
-/** Stand-in gallery when Compass RapidAPI returns no photo URLs — replace in Edit brochure. */
+/** Stand-in gallery when a portal API returns no photo URLs — replace in Edit brochure. */
 export const EXAMPLE_LISTING_PHOTOS: ListingImage[] = demoListing.images.map((img, i) => ({
   ...img,
-  alt: `Example listing photo ${i + 1} — replace with Compass photos in Edit brochure`,
+  alt: `Example listing photo ${i + 1} — replace with scraped photos in Edit brochure`,
 }))
 
 export function detectSource(url: string): ListingSource {
@@ -457,6 +492,11 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
     'building.parking',
     'parking.spaces',
   ])
+  const parkingLines = [
+    ...asList(data.parking),
+    ...asList(data.parkingFeatures),
+    ...asList(dig(data, ['resoFacts.parkingFeatures', 'facts.parking'])),
+  ]
   const garageCount =
     pickNumber(data, [
       'garageSpaces',
@@ -468,11 +508,12 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
     ]) ??
     findNumberByKeys(data, GARAGE_KEYS) ??
     toNumber(garageRaw) ??
-    matchFromText([...asList(garageRaw), ...textBlobs], [
+    matchFromText([...asList(garageRaw), ...parkingLines, ...textBlobs], [
       /(\d+)\s*[- ]?car(?:\s*garage)?/i,
       /(\d+)\s*(?:car\s*)?garage/i,
       /garage\s*[:#]?\s*(\d+)/i,
       /parking\s*[:#]?\s*(\d+)/i,
+      /(\d+)\s*garage spaces?/i,
     ])
 
   let garage = '—'
@@ -499,6 +540,9 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
       'walkScore.score',
       'location.walkScore',
       'location.walk_score',
+      'resoFacts.walkScore',
+      'walkAndTransitScore.walkscore',
+      'walkAndTransitScore.walkScore',
     ]) ??
     walkFromObj ??
     findWalkScoreByKeys(data) ??
@@ -544,27 +588,40 @@ function looksLikeImageUrl(value: string): boolean {
   const v = value.trim()
   if (!/^https?:\/\//i.test(v)) return false
   if (/photos\.compass\.com/i.test(v)) return true
+  if (/photos\.zillowstatic\.com/i.test(v)) return true
+  if (/cdn-redfin\.com/i.test(v)) return true
   if (IMAGE_URL_RE.test(v)) return true
   if (CDN_HINT_RE.test(v)) return true
   if (/[?&](w|width|h|height|size|fit)=/i.test(v) && /\/(photo|image|img|media|pictures?)\//i.test(v)) return true
   return false
 }
 
-/** PullAPI documents `photos: string[]` and sometimes `image_url` on Compass payloads. */
-function extractCompassPhotos(data: Record<string, unknown>): string[] {
+/** PullAPI + Zillow/Redfin photo fields on portal payloads. */
+function extractListingPhotos(data: Record<string, unknown>): string[] {
+  const photoObjects = data.photos
+  const fromPhotoObjects: string[] = []
+  if (Array.isArray(photoObjects)) {
+    for (const item of photoObjects) {
+      if (item && typeof item === 'object') {
+        const obj = item as Record<string, unknown>
+        if (typeof obj.url === 'string') fromPhotoObjects.push(obj.url)
+        if (typeof obj.href === 'string') fromPhotoObjects.push(obj.href)
+      }
+    }
+  }
+
   const primary = [
+    ...fromPhotoObjects,
     ...asList(data.photos),
     ...asList(data.image_url),
     ...asList(data.image_urls),
     ...asList(data.images),
-    ...asList(dig(data, ['media.photos', 'gallery', 'photoUrls', 'building.photos'])),
+    ...asList(dig(data, ['media.photos', 'gallery', 'photoUrls', 'building.photos', 'listingPhotos', 'propertyPhotos'])),
   ].filter((u) => looksLikeImageUrl(u))
 
   if (primary.length >= 2) return [...new Set(primary)]
-  // Fall back to deep walk for nested / alternate shapes
   return [...new Set([...primary, ...extractPhotoUrls(data)])]
 }
-
 /** Deep-collect listing photo URLs from nested portal payloads. */
 export function extractPhotoUrls(data: unknown, limit = 24): string[] {
   const found: string[] = []
@@ -785,16 +842,18 @@ function withJasonBrand(listing: Listing, sourceUrl: string): Listing {
   }
 }
 
-function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _source: ListingSource): Listing {
-  const photos = extractCompassPhotos(data)
-  const amenities = asList(data.amenities || data.features || data.highlights || data.key_features)
+function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string): Listing {
+  const photos = extractListingPhotos(data)
+  const amenities = asList(
+    data.amenities || data.features || data.highlights || data.key_features || dig(data, ['resoFacts.highlights']),
+  )
   const address = asString(
     dig(data, ['street_address', 'address', 'name', 'location.streetAddress', 'address.streetAddress']),
   )
   const city = asString(dig(data, ['city', 'address.city', 'location.city']))
   const state = asString(dig(data, ['state', 'address.state', 'location.state']))
   const zip = asString(dig(data, ['zip_code', 'zipcode', 'zip', 'address.zipcode', 'address.zip']))
-  const neighborhood = asString(dig(data, ['neighborhood', 'area', 'subdivision', 'region']))
+  const neighborhood = asString(dig(data, ['neighborhood', 'area', 'subdivision', 'region', 'location']))
   const description = asString(dig(data, ['description', 'remarks', 'public_remarks', 'overview']))
   const price = money(dig(data, ['price', 'list_price', 'listPrice', 'priceInfo.price']))
 
@@ -816,7 +875,10 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, _sou
       zip,
       neighborhood: place,
       price: price || 'Price on request',
-      status: asString(data.status || data.listing_status, 'Offered exclusively').replace(/_/g, ' '),
+      status: asString(
+        data.status || data.listing_status || data.mls_status || data.listingStatus,
+        'Offered exclusively',
+      ).replace(/_/g, ' '),
       headline: `Modern living in ${place}`,
       subhead: `A refined ${homeType} presentation for ${regionHint} sellers and buyers.`,
       about:
@@ -877,15 +939,116 @@ async function rapidGet(host: string, path: string, apiKey: string): Promise<Rec
   return json
 }
 
-async function fetchCompassRaw(url: string, apiKey: string): Promise<Record<string, unknown>> {
-  const path = `/compass/property?url=${encodeURIComponent(url)}`
-  const json = await rapidGet(HOSTS.compass, path, apiKey)
-  return unwrapCompassPayload(json)
+async function fetchPortalRaw(
+  attempts: Array<{ host: string; path: string }>,
+  apiKey: string,
+): Promise<Record<string, unknown>> {
+  let lastErr: Error | null = null
+  for (const { host, path } of attempts) {
+    try {
+      const json = await rapidGet(host, path, apiKey)
+      return unwrapCompassPayload(json)
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error(String(err))
+      if (/quota|exceeded|rate limit/i.test(lastErr.message)) throw lastErr
+    }
+  }
+  throw lastErr || new Error('All API endpoints failed for this listing.')
 }
 
-async function fetchCompass(url: string, apiKey: string): Promise<Listing> {
-  const data = await fetchCompassRaw(url, apiKey)
-  return normalizeGeneric(data, url, 'compass')
+function extractZpid(url: string): string | null {
+  const zpidMatch = url.match(/(\d+)_zpid/i)
+  if (zpidMatch?.[1]) return zpidMatch[1]
+  const pathMatch = url.match(/homedetails\/[^/]+\/(\d+)/i)
+  return pathMatch?.[1] || null
+}
+
+async function fetchCompassRaw(url: string, apiKey: string): Promise<Record<string, unknown>> {
+  return fetchPortalRaw(
+    [{ host: HOSTS.compass, path: `/compass/property?url=${encodeURIComponent(url)}` }],
+    apiKey,
+  )
+}
+
+async function fetchZillowRaw(url: string, apiKey: string): Promise<Record<string, unknown>> {
+  const zpid = extractZpid(url)
+  const attempts: Array<{ host: string; path: string }> = []
+
+  if (zpid) {
+    attempts.push({ host: HOSTS.zillow, path: `/zillow/property/${zpid}` })
+    attempts.push({ host: HOSTS.zillow56, path: `/property?zpid=${zpid}` })
+  }
+  attempts.push({ host: HOSTS.zillowAlt, path: `/property-details?url=${encodeURIComponent(url)}` })
+
+  let data = await fetchPortalRaw(attempts, apiKey)
+
+  if (zpid) {
+    try {
+      const photosJson = await rapidGet(HOSTS.zillow, `/zillow/photos/${zpid}`, apiKey)
+      const photoPayload = unwrapCompassPayload(photosJson)
+      const extra = extractListingPhotos(photoPayload)
+      if (extra.length) {
+        const merged = [...extractListingPhotos(data), ...extra]
+        data = { ...data, photos: [...new Set(merged)], image_urls: [...new Set(merged)] }
+      }
+    } catch {
+      // Optional photo enrichment
+    }
+  }
+
+  return data
+}
+
+async function fetchRedfinRaw(url: string, apiKey: string): Promise<Record<string, unknown>> {
+  const encoded = encodeURIComponent(url)
+  return fetchPortalRaw(
+    [
+      { host: HOSTS.redfin, path: `/details?url=${encoded}` },
+      { host: HOSTS.redfinAlt, path: `/property-details?url=${encoded}` },
+      { host: HOSTS.redfinUnified, path: `/redfin/property-details?url=${encoded}` },
+    ],
+    apiKey,
+  )
+}
+
+async function fetchListing(url: string, source: ListingSource, apiKey: string): Promise<Listing> {
+  let data: Record<string, unknown>
+  switch (source) {
+    case 'compass':
+      data = await fetchCompassRaw(url, apiKey)
+      break
+    case 'zillow':
+      data = await fetchZillowRaw(url, apiKey)
+      break
+    case 'redfin':
+      data = await fetchRedfinRaw(url, apiKey)
+      break
+    default:
+      throw new Error(`Unsupported listing source: ${source}`)
+  }
+  return normalizeGeneric(data, url)
+}
+
+function portalKeyForSource(source: ListingSource, keys: PortalApiKeys): string {
+  switch (source) {
+    case 'compass':
+      return keys.compass?.trim() || ''
+    case 'zillow':
+      return keys.zillow?.trim() || ''
+    case 'redfin':
+      return keys.redfin?.trim() || ''
+    default:
+      return ''
+  }
+}
+
+function buildImportNotice(listing: Listing, source: ListingSource, photoCount: number): string {
+  const statBits = listing.stats.filter((s) => s.value && s.value !== '—').map((s) => s.label.toLowerCase())
+  const statsSummary =
+    statBits.length > 0 ? ` · ${statBits.slice(0, 5).join(', ')} scraped` : ' · review stats in Edit brochure if any show —'
+  let notice = `Loaded from ${sourceLabel(source)} via RapidAPI · ${photoCount} photo${photoCount === 1 ? '' : 's'}${statsSummary}.`
+  if (listing.walkScore > 0) notice += ` Walk Score ${listing.walkScore}.`
+  return notice
 }
 
 export type ImportResult = {
@@ -896,29 +1059,30 @@ export type ImportResult = {
   notice: string
 }
 
-export async function importListingFromUrl(url: string, apiKey: string): Promise<ImportResult> {
+export async function importListingFromUrl(url: string, keys: PortalApiKeys | string): Promise<ImportResult> {
   const trimmed = url.trim()
-  if (!trimmed) throw new Error('Paste a Compass listing URL first.')
-  if (!apiKey.trim()) throw new Error('Add your RapidAPI key to import a Compass listing.')
+  if (!trimmed) throw new Error('Paste a Compass, Zillow, or Redfin listing URL first.')
+
+  const portalKeys: PortalApiKeys =
+    typeof keys === 'string' ? { compass: keys, zillow: keys, redfin: keys } : keys
 
   const source = detectSource(trimmed)
-  if (source !== 'compass') {
+  if (source !== 'compass' && source !== 'zillow' && source !== 'redfin') {
     throw new Error(
-      'This studio imports from Compass.com only (RapidAPI Compass Data API). Zillow and Redfin need their own separate APIs — paste a compass.com/homedetails/… URL, or Load Demo and replace photos in Edit brochure.',
+      'Paste a supported listing URL: compass.com/homedetails/…, zillow.com/homedetails/…, or redfin.com/…/home/…. Then add the matching RapidAPI key below.',
     )
   }
 
-  let listing = await fetchCompass(trimmed, apiKey.trim())
-  let usedExamplePhotos = false
-  const statBits = listing.stats
-    .filter((s) => s.value && s.value !== '—')
-    .map((s) => s.label.toLowerCase())
-  const statsSummary =
-    statBits.length > 0 ? ` · ${statBits.slice(0, 4).join(', ')} from API` : ' · review stats in Edit brochure if any show —'
-  let notice = `Loaded from Compass via RapidAPI · ${listing.images.length} listing photo${listing.images.length === 1 ? '' : 's'} scraped${statsSummary}.`
-  if (listing.walkScore > 0) {
-    notice += ` Walk Score ${listing.walkScore}.`
+  const apiKey = portalKeyForSource(source, portalKeys)
+  if (!apiKey) {
+    throw new Error(
+      `Add your RapidAPI key for ${sourceLabel(source)} (${source === 'compass' ? 'Compass.com Real Estate Data API' : source === 'zillow' ? 'Zillow Scraper API or Real-Time Real-Estate Data' : 'Redfin.com Data API or Real-Time Redfin Data'}).`,
+    )
   }
+
+  let listing = await fetchListing(trimmed, source, apiKey)
+  let usedExamplePhotos = false
+  let notice = buildImportNotice(listing, source, listing.images.length)
 
   if (!listing.images.length) {
     usedExamplePhotos = true
@@ -926,8 +1090,7 @@ export async function importListingFromUrl(url: string, apiKey: string): Promise
       ...listing,
       images: EXAMPLE_LISTING_PHOTOS.map((img) => ({ ...img })),
     })
-    notice =
-      'Compass facts loaded, but RapidAPI returned no photo URLs for this listing. Example listing photos were added — replace them in Edit brochure with the real Compass gallery.'
+    notice = `${sourceLabel(source)} facts loaded, but RapidAPI returned no photo URLs. Example photos were added — replace them in Edit brochure.`
   }
 
   return { listing, source, usedExamplePhotos, notice }

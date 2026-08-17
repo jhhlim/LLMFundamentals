@@ -1,7 +1,43 @@
 import { useMemo, useState } from 'react'
 import { Link2, Loader2, Sparkles } from 'lucide-react'
-import { detectSource, importListingFromUrl, sourceLabel, type ListingSource } from '../lib/listingImport'
+import {
+  detectSource,
+  importListingFromUrl,
+  loadPortalApiKeys,
+  savePortalApiKeys,
+  sourceLabel,
+  type ListingSource,
+  type PortalApiKeys,
+} from '../lib/listingImport'
 import type { Listing } from '../data/listing'
+
+function KeyField({
+  label,
+  hint,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string
+  hint: string
+  value: string
+  onChange: (v: string) => void
+  placeholder?: string
+}) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/15 px-3 py-3">
+      <label className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/55">{label}</label>
+      <input
+        type="password"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder || 'Paste RapidAPI key'}
+        className="mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2 text-sm outline-none"
+      />
+      <p className="mt-2 text-xs leading-relaxed text-white/45">{hint}</p>
+    </div>
+  )
+}
 
 export function ImportPanel({
   onImported,
@@ -11,17 +47,21 @@ export function ImportPanel({
   onDemo: () => void
 }) {
   const [url, setUrl] = useState('')
-  const [apiKey, setApiKey] = useState(() => sessionStorage.getItem('rapidapi_key') || '')
-  const [status, setStatus] = useState('Paste a Compass listing URL to scrape photos and facts via RapidAPI.')
+  const [keys, setKeys] = useState<PortalApiKeys>(() => loadPortalApiKeys())
+  const [status, setStatus] = useState(
+    'Paste a Compass, Zillow, or Redfin listing URL — add the matching RapidAPI key below.',
+  )
   const [loading, setLoading] = useState(false)
   const source = useMemo(() => (url.trim() ? detectSource(url) : null), [url])
 
+  const supported = source === 'compass' || source === 'zillow' || source === 'redfin'
+
   async function handleImport() {
     setLoading(true)
-    setStatus('Fetching Compass listing + photos via RapidAPI…')
+    setStatus(`Fetching ${source ? sourceLabel(source) : 'listing'} details + photos via RapidAPI…`)
     try {
-      sessionStorage.setItem('rapidapi_key', apiKey.trim())
-      const result = await importListingFromUrl(url, apiKey)
+      savePortalApiKeys(keys)
+      const result = await importListingFromUrl(url, keys)
       setStatus(result.notice)
       onImported(result.listing, result.source, {
         usedExamplePhotos: result.usedExamplePhotos,
@@ -51,50 +91,61 @@ export function ImportPanel({
         </p>
         <h1 className="editorial-display mt-4 text-5xl md:text-6xl">Create a luxury listing brochure</h1>
         <p className="mt-5 max-w-2xl text-base leading-relaxed text-white/70 md:text-lg">
-          Paste a Compass listing link. We scrape photos and facts with the Compass RapidAPI, then compose an
-          editorial brochure — refine anything in Edit brochure before Print / PDF.
+          Paste a listing link from Compass, Zillow, or Redfin. We scrape photos, beds/baths, living area, lot size,
+          garage, year built, and walk score — then compose an editorial brochure you can refine before Print / PDF.
         </p>
 
         <div className="mt-10 rounded-[2rem] border border-white/10 bg-white/5 p-6 backdrop-blur-md md:p-8">
-          <label className="text-[11px] uppercase tracking-[0.22em] text-white/50">Compass listing URL</label>
+          <label className="text-[11px] uppercase tracking-[0.22em] text-white/50">Listing URL</label>
           <div className="mt-3 flex items-center gap-3 rounded-2xl bg-white px-4 py-3 text-ink">
             <Link2 className="h-5 w-5 shrink-0 text-stone" />
             <input
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://www.compass.com/homedetails/…"
+              placeholder="compass.com, zillow.com/homedetails/…, or redfin.com/…/home/…"
               className="w-full bg-transparent text-sm outline-none placeholder:text-stone/70 md:text-base"
             />
           </div>
 
-          {source && source !== 'unknown' && (
+          {source && (
             <p className="mt-3 text-sm text-gold-soft">
               Detected source: <span className="font-semibold">{sourceLabel(source)}</span>
-              {source !== 'compass' ? ' — not supported in this build (Compass only)' : ''}
+              {!supported ? ' — paste a Compass, Zillow, or Redfin listing URL' : ''}
             </p>
           )}
 
           <details className="mt-5 rounded-2xl border border-white/10 bg-black/20 px-4 py-3" open>
-            <summary className="cursor-pointer text-sm text-white/80">RapidAPI key (Compass Data API)</summary>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="Paste RapidAPI key"
-              className="mt-3 w-full rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm outline-none"
-            />
+            <summary className="cursor-pointer text-sm text-white/80">RapidAPI keys (one per portal)</summary>
             <p className="mt-2 text-xs leading-relaxed text-white/50">
-              Stored in this browser session only. Subscribe to{' '}
-              <span className="text-white/70">Compass.com Real Estate Data API</span> on RapidAPI, then paste your
-              key. We call <code className="text-gold-soft">/compass/property</code> to scrape listing photos +
-              facts.
+              Keys stay in this browser session only. Subscribe to each RapidAPI product you use — the same RapidAPI
+              account key works once you are subscribed to that API.
             </p>
+            <div className="mt-4 space-y-3">
+              <KeyField
+                label="Compass"
+                hint="Compass.com Real Estate Data API · GET /compass/property?url=…"
+                value={keys.compass || ''}
+                onChange={(compass) => setKeys((k) => ({ ...k, compass }))}
+              />
+              <KeyField
+                label="Zillow"
+                hint="Zillow Scraper API (/zillow/property/{zpid}) or Real-Time Real-Estate Data (/property-details?url=…)"
+                value={keys.zillow || ''}
+                onChange={(zillow) => setKeys((k) => ({ ...k, zillow }))}
+              />
+              <KeyField
+                label="Redfin"
+                hint="Redfin.com Data API (/details?url=…) or Real-Time Redfin Data (/property-details?url=…)"
+                value={keys.redfin || ''}
+                onChange={(redfin) => setKeys((k) => ({ ...k, redfin }))}
+              />
+            </div>
           </details>
 
           <div className="mt-6 flex flex-wrap gap-3">
             <button
               type="button"
-              disabled={loading}
+              disabled={loading || !supported}
               onClick={handleImport}
               className="inline-flex items-center gap-2 rounded-full bg-gold px-5 py-3 text-sm font-semibold text-ink transition hover:bg-gold-soft disabled:opacity-60"
             >
@@ -113,25 +164,16 @@ export function ImportPanel({
 
           <p className="mt-5 text-sm leading-relaxed text-white/65">{status}</p>
 
-          <div className="mt-6 rounded-2xl border border-amber-200/25 bg-amber-500/10 px-4 py-3 text-sm leading-relaxed text-amber-50/90">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-100/80">Notice</p>
-            <p className="mt-2">
-              This version uses the <strong className="font-semibold text-white">Compass.com RapidAPI</strong> only
-              (PullAPI Compass Data API). It does <strong className="font-semibold text-white">not</strong> call
-              Zillow or Redfin — those portals need their own separate RapidAPI products. If Compass returns no
-              photos, example listing photos are filled in so you can still design the brochure, then swap them in{' '}
-              <strong className="font-semibold text-white">Edit brochure</strong>.
-            </p>
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-            <p className="text-xs uppercase tracking-[0.18em] text-white/45">Example</p>
-            <p className="mt-1 text-xs text-white/70">compass.com/homedetails/…</p>
+          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm leading-relaxed text-white/70">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/45">Examples</p>
+            <p className="mt-2 text-xs">compass.com/homedetails/…</p>
+            <p className="text-xs">zillow.com/homedetails/…/12345678_zpid/</p>
+            <p className="text-xs">redfin.com/CA/City/123-Main-St-90210/home/12345678</p>
           </div>
         </div>
 
         <p className="mt-8 text-xs text-white/40">
-          Tip: after import, open Edit brochure to reorder scraped Compass photos or upload your MLS gallery.
+          Tip: after import, open Edit brochure to reorder photos or fill any stats the scraper missed.
         </p>
       </div>
     </section>
