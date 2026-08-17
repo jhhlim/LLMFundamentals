@@ -162,10 +162,11 @@ export default function App() {
             : ''}
           {importNotice && !usedExamplePhotos ? ` ${importNotice}` : ''}
         </div>
-        <SectionNav />
       </div>
 
-      <div className="screen-only">
+      <SectionNav />
+
+      <div className="screen-only pb-36">
         <main>
           <HeroSection listing={listing} />
           <PropertyStats listing={listing} />

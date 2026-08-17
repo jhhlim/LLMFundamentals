@@ -4,7 +4,7 @@ import { cn } from '../lib/utils'
 
 export function SectionNav() {
   const [activeId, setActiveId] = useState<BrochureSectionId>('section-overview')
-  const navRef = useRef<HTMLElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const buttonRefs = useRef<Partial<Record<BrochureSectionId, HTMLButtonElement>>>({})
 
   useEffect(() => {
@@ -22,7 +22,7 @@ export function SectionNav() {
           setActiveId(visible[0].target.id as BrochureSectionId)
         }
       },
-      { rootMargin: '-8rem 0px -55% 0px', threshold: [0, 0.15, 0.35, 0.55] },
+      { rootMargin: '-20% 0px -35% 0px', threshold: [0, 0.15, 0.35, 0.55] },
     )
 
     sections.forEach((section) => observer.observe(section))
@@ -31,13 +31,13 @@ export function SectionNav() {
 
   useEffect(() => {
     const button = buttonRefs.current[activeId]
-    const nav = navRef.current
-    if (!button || !nav) return
+    const scroller = scrollRef.current
+    if (!button || !scroller) return
 
-    const navRect = nav.getBoundingClientRect()
+    const scrollerRect = scroller.getBoundingClientRect()
     const buttonRect = button.getBoundingClientRect()
-    const outOfViewLeft = buttonRect.left < navRect.left + 12
-    const outOfViewRight = buttonRect.right > navRect.right - 12
+    const outOfViewLeft = buttonRect.left < scrollerRect.left + 8
+    const outOfViewRight = buttonRect.right > scrollerRect.right - 8
     if (outOfViewLeft || outOfViewRight) {
       button.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
     }
@@ -50,15 +50,17 @@ export function SectionNav() {
 
   return (
     <nav
-      ref={navRef}
       aria-label="Brochure sections"
-      className="border-b border-stone-light/40 bg-paper/95 backdrop-blur transition-colors dark:border-white/10 dark:bg-[#071421]/95"
+      className="no-print pointer-events-none fixed inset-x-0 bottom-[4.85rem] z-50 flex justify-center px-3 sm:bottom-[5.15rem] sm:px-4"
     >
-      <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-2.5 md:px-6">
-        <p className="hidden shrink-0 text-[10px] font-semibold uppercase tracking-[0.24em] text-stone md:block dark:text-stone-light/70">
-          Jump to
+      <div className="pointer-events-auto flex w-full max-w-4xl items-center gap-2 rounded-full border border-stone-light/50 bg-paper/95 py-2 pl-3 pr-2 shadow-[0_16px_48px_-20px_rgba(11,31,51,0.55)] backdrop-blur-md transition-colors dark:border-white/15 dark:bg-[#0c1f33]/95 dark:shadow-[0_16px_48px_-20px_rgba(0,0,0,0.85)] sm:gap-3 sm:pl-4">
+        <p className="hidden shrink-0 text-[9px] font-semibold uppercase tracking-[0.22em] text-stone sm:block dark:text-stone-light/70">
+          Sections
         </p>
-        <div className="section-nav-scroll flex min-w-0 flex-1 gap-2 overflow-x-auto pb-0.5">
+        <div
+          ref={scrollRef}
+          className="section-nav-scroll flex min-w-0 flex-1 gap-1.5 overflow-x-auto sm:gap-2"
+        >
           {BROCHURE_SECTIONS.map(({ id, label }) => {
             const active = activeId === id
             return (
@@ -71,7 +73,7 @@ export function SectionNav() {
                 onClick={() => scrollToSection(id)}
                 aria-current={active ? 'true' : undefined}
                 className={cn(
-                  'shrink-0 rounded-full border px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] transition duration-200',
+                  'shrink-0 rounded-full border px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition duration-200 sm:px-3 sm:text-[11px] sm:tracking-[0.14em]',
                   active
                     ? 'border-accent bg-accent text-white shadow-sm'
                     : 'border-stone-light/60 bg-white/70 text-ink/75 hover:border-accent/40 hover:text-accent dark:border-white/15 dark:bg-white/5 dark:text-white/75 dark:hover:border-accent/50 dark:hover:text-gold-soft',
