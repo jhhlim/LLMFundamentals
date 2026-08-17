@@ -2,7 +2,7 @@
 
 Premium editorial brochure for any agent — Compass, Keller Williams, eXp, RE/MAX, and independent.
 
-Sign in with a local profile (name, photo, license, brokerage). Imported Compass, Zillow, and Redfin listings are branded with that profile before Print / PDF.
+Sign in with a local profile (name, photo, license, brokerage). Imported Compass, Zillow, and Redfin listings are branded with that profile before Print / PDF. A **Market trends** page shows nearby sold and listed comps when a RapidAPI search key can read the ZIP.
 
 ## Stack
 - React + Vite + TypeScript

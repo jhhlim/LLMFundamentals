@@ -132,7 +132,8 @@ export function ImportPanel({
         <h1 className="editorial-display mt-6 text-5xl md:text-6xl">Create a luxury listing brochure</h1>
         <p className="mt-5 max-w-2xl text-base leading-relaxed text-white/70 md:text-lg">
           Paste a listing link from Compass, Zillow, or Redfin. We scrape photos, beds/baths, living area, lot size,
-          garage, year built, and walk score — then compose an editorial brochure branded with your profile.
+          garage, year built, walk score, and nearby sold/listed comps — then compose an editorial brochure branded with
+          your profile.
         </p>
 
         <div className="mt-10 rounded-[2rem] border border-white/10 bg-white/5 p-6 backdrop-blur-md md:p-8">

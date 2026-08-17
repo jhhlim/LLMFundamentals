@@ -494,4 +494,36 @@
   .print-qr.light {
     background: #fff;
   }
+
+  .print-comp-grid {
+    margin-top: 0.22in;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.12in;
+  }
+
+  .print-comp {
+    border: 1px solid #e4ddd0;
+    border-radius: 0.1in;
+    padding: 0.12in 0.14in;
+  }
+
+  .print-comp strong {
+    display: block;
+    margin: 0.04in 0;
+    font-size: 10pt;
+    color: #0b1f33;
+  }
+
+  .print-comp p {
+    margin: 0;
+    font-size: 8.5pt;
+    color: #5c574e;
+  }
+
+  .print-comp-note {
+    margin-top: 0.2in;
+    font-size: 8pt;
+    color: #8a8478;
+  }
 }

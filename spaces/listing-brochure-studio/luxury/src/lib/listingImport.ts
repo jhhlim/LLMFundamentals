@@ -1,5 +1,7 @@
 import { demoListing, type Agent, type FeatureCard, type Listing, type ListingImage, type NeighborhoodPlace } from '../data/listing'
 import { applyAgentToListing } from './agentAuth'
+import { buildMarketReport, compsFromPayload, emptyMarketReport } from './marketReport'
+import type { MarketComp, MarketReport } from '../data/listing'
 
 export type ListingSource = 'compass' | 'zillow' | 'redfin' | 'realtor' | 'mls' | 'unknown'
 
@@ -1480,6 +1482,7 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, agen
         photo: '',
         website: '',
       },
+      market: emptyMarketReport(place),
     },
     sourceUrl,
     agent,
@@ -1825,6 +1828,117 @@ async function fetchListing(url: string, source: ListingSource, apiKey: string, 
   return normalizeGeneric(data, url, agent)
 }
 
+function locationQuery(listing: Listing): string {
+  return listing.zip || [listing.city, listing.state].filter(Boolean).join(', ') || listing.neighborhood
+}
+
+function bedsHint(listing: Listing): { min?: number; max?: number } {
+  const beds = Number(listing.stats.find((s) => s.label === 'Bedrooms')?.value)
+  if (!Number.isFinite(beds) || beds <= 0) return {}
+  return { min: Math.max(1, beds - 1), max: beds + 1 }
+}
+
+async function tryComps(host: string, path: string, apiKey: string, fallback?: 'sold' | 'listed'): Promise<MarketComp[]> {
+  try {
+    const json = await rapidGet(host, path, apiKey)
+    return compsFromPayload(json, fallback)
+  } catch {
+    return []
+  }
+}
+
+async function fetchMarketReport(listing: Listing, keys: PortalApiKeys, sourceUrl: string): Promise<MarketReport> {
+  const loc = locationQuery(listing)
+  const beds = bedsHint(listing)
+  const bedQs = beds.min != null ? `&bedsMin=${beds.min}&bedsMax=${beds.max}` : ''
+  const locQs = loc ? encodeURIComponent(loc) : ''
+  const zpid = extractZpid(sourceUrl) || extractZpid(listing.listingUrl)
+  const propertyId = extractRedfinPropertyId(sourceUrl) || extractRedfinPropertyId(listing.listingUrl)
+  const all: MarketComp[] = []
+  const sources: string[] = []
+
+  const zillowKey = keys.zillow?.trim()
+  if (zillowKey && locQs) {
+    const sold = await tryComps(
+      HOSTS.zillowCom1,
+      `/propertyExtendedSearch?location=${locQs}&status_type=RecentlySold${bedQs}`,
+      zillowKey,
+      'sold',
+    )
+    await sleep(250)
+    const listed = await tryComps(
+      HOSTS.zillowCom1,
+      `/propertyExtendedSearch?location=${locQs}&status_type=ForSale${bedQs}`,
+      zillowKey,
+      'listed',
+    )
+    if (sold.length || listed.length) sources.push('Zillow')
+    all.push(...sold, ...listed)
+    if (zpid) {
+      await sleep(250)
+      const comps = await tryComps(HOSTS.zillowCom1, `/propertyComps?zpid=${zpid}`, zillowKey)
+      if (comps.length) {
+        if (!sources.includes('Zillow')) sources.push('Zillow')
+        all.push(...comps)
+      }
+    }
+    if (!all.length) {
+      await sleep(200)
+      const rtSold = await tryComps(
+        HOSTS.zillowRt,
+        `/search?location=${locQs}&home_status=RECENTLY_SOLD`,
+        zillowKey,
+        'sold',
+      )
+      const rtList = await tryComps(HOSTS.zillowRt, `/search?location=${locQs}&home_status=FOR_SALE`, zillowKey, 'listed')
+      if (rtSold.length || rtList.length) sources.push('Zillow')
+      all.push(...rtSold, ...rtList)
+    }
+  }
+
+  const redfinKey = keys.redfin?.trim()
+  if (redfinKey && propertyId && all.length < 8) {
+    const listingId = propertyId
+    const q = `propertyId=${encodeURIComponent(propertyId)}&listingId=${encodeURIComponent(listingId)}`
+    const paths = [
+      { path: `/similar_listings?${q}`, status: 'listed' as const },
+      { path: `/similars/listings?${q}`, status: 'listed' as const },
+      { path: `/similars/solds?${q}`, status: 'sold' as const },
+      { path: `/similar_sold?${q}`, status: 'sold' as const },
+      { path: `/nearbyhomes?${q}`, status: undefined },
+    ]
+    let got = 0
+    for (const row of paths) {
+      const batch = await tryComps(HOSTS.redfin, row.path, redfinKey, row.status)
+      if (batch.length) {
+        all.push(...batch)
+        got += batch.length
+      }
+      await sleep(200)
+      if (got >= 8) break
+    }
+    if (got) sources.push('Redfin')
+  }
+
+  const compassKey = keys.compass?.trim()
+  if (compassKey && locQs && all.length < 6) {
+    const batch = await tryComps(HOSTS.compass, `/compass/search?location=${locQs}`, compassKey, 'listed')
+    if (batch.length) {
+      all.push(...batch)
+      sources.push('Compass')
+    }
+  }
+
+  if (!all.length) {
+    const empty = emptyMarketReport([listing.neighborhood, listing.city, listing.zip].filter(Boolean).join(' · '))
+    empty.summary =
+      'No nearby comps came back for this ZIP. Subscribe to Zillow (zillow-com1) or Redfin on RapidAPI, then re-import — search uses the same key.'
+    return empty
+  }
+
+  return buildMarketReport(listing, all, sources)
+}
+
 function portalKeyForSource(source: ListingSource, keys: PortalApiKeys): string {
   switch (source) {
     case 'compass':
@@ -1844,6 +1958,9 @@ function buildImportNotice(listing: Listing, source: ListingSource, photoCount: 
     statBits.length > 0 ? ` · ${statBits.slice(0, 5).join(', ')} scraped` : ' · review stats in Edit brochure if any show —'
   let notice = `Loaded from ${sourceLabel(source)} via RapidAPI · ${photoCount} photo${photoCount === 1 ? '' : 's'}${statsSummary}.`
   if (listing.walkScore > 0) notice += ` Walk Score ${listing.walkScore}.`
+  if (listing.market.comps.length) {
+    notice += ` · ${listing.market.comps.length} nearby comps (${listing.market.soldCount} sold / ${listing.market.listedCount} listed).`
+  }
   return notice
 }
 
@@ -1893,6 +2010,13 @@ export async function importListingFromUrl(
     }
   }
   let usedExamplePhotos = false
+
+  try {
+    listing = { ...listing, market: await fetchMarketReport(listing, portalKeys, trimmed) }
+  } catch {
+    listing = { ...listing, market: emptyMarketReport([listing.neighborhood, listing.city, listing.zip].filter(Boolean).join(' · ')) }
+  }
+
   let notice = buildImportNotice(listing, source, listing.images.length)
 
   if (!listing.images.length) {
@@ -1902,6 +2026,9 @@ export async function importListingFromUrl(
       images: EXAMPLE_LISTING_PHOTOS.map((img) => ({ ...img })),
     })
     notice = `${sourceLabel(source)} facts loaded, but RapidAPI returned no photo URLs. Example photos were added — replace them in Edit brochure.`
+    if (listing.market.comps.length) {
+      notice += ` Nearby comps: ${listing.market.comps.length}.`
+    }
   }
 
   if (agent) listing = applyAgentToListing(listing, agent)

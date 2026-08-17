@@ -124,7 +124,49 @@ export function PrintBrochure({ listing }: { listing: Listing }) {
         </div>
       </section>
 
-      {/* PAGE 5 — Lifestyle + CTA */}
+      {/* PAGE 5 — Market comps */}
+      <section className="print-page print-light">
+        <p className="print-kicker">Market trends</p>
+        <h2>Similar homes nearby</h2>
+        <p className="print-about">{listing.market.summary}</p>
+        <div className="print-cards">
+          <div className="print-card">
+            <p className="print-kicker">Median sold</p>
+            <p className="print-stat-value dark">{listing.market.medianSold}</p>
+          </div>
+          <div className="print-card">
+            <p className="print-kicker">Median list</p>
+            <p className="print-stat-value dark">{listing.market.medianList}</p>
+          </div>
+          <div className="print-card">
+            <p className="print-kicker">Avg. $/SF</p>
+            <p className="print-stat-value dark">{listing.market.avgPpsf}</p>
+          </div>
+          <div className="print-card">
+            <p className="print-kicker">Comps</p>
+            <p className="print-stat-value dark">{listing.market.comps.length || '—'}</p>
+          </div>
+        </div>
+        <div className="print-comp-grid">
+          {listing.market.comps.slice(0, 8).map((comp) => (
+            <div key={`${comp.address}-${comp.price}`} className="print-comp">
+              <p className="print-kicker">{comp.status}</p>
+              <strong>{comp.address}</strong>
+              <p>
+                {comp.price} · {comp.beds} bd · {comp.baths} ba · {comp.sqft}
+              </p>
+              <p>
+                {comp.pricePerSqft} · {comp.dateLabel}
+              </p>
+            </div>
+          ))}
+        </div>
+        <p className="print-comp-note">
+          Public portal comps{listing.market.sourceLabel ? ` · ${listing.market.sourceLabel}` : ''}. Not an appraisal.
+        </p>
+      </section>
+
+      {/* PAGE 6 — Lifestyle + CTA */}
       <section className="print-page print-light">
         <p className="print-kicker">Lifestyle</p>
         <h2>How the days feel here</h2>

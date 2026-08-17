@@ -39,6 +39,34 @@ export type Agent = {
   website: string
 }
 
+export type CompStatus = 'sold' | 'listed' | 'pending'
+
+export type MarketComp = {
+  address: string
+  city: string
+  status: CompStatus
+  price: string
+  beds: string
+  baths: string
+  sqft: string
+  dateLabel: string
+  pricePerSqft: string
+  photo: string
+  url: string
+}
+
+export type MarketReport = {
+  area: string
+  sourceLabel: string
+  summary: string
+  medianSold: string
+  medianList: string
+  avgPpsf: string
+  soldCount: number
+  listedCount: number
+  comps: MarketComp[]
+}
+
 export type Listing = {
   address: string
   city: string
@@ -60,6 +88,7 @@ export type Listing = {
   walkScore: number
   lifestyle: LifestyleMoment[]
   agent: Agent
+  market: MarketReport
 }
 
 export const demoListing: Listing = {
@@ -192,5 +221,109 @@ export const demoListing: Listing = {
     dre: 'DRE #02444964',
     photo: 'https://www.jasonlimrealty.com/images/jason-lim-headshot.jpg',
     website: 'https://www.jasonlimrealty.com',
+  },
+  market: {
+    area: 'Willow Glen · San Jose · 95125',
+    sourceLabel: 'Sample neighborhood comps',
+    summary:
+      'Recent sales and active listings around Willow Glen, comparable in size and price band to the subject home.',
+    medianSold: '$1,812,000',
+    medianList: '$1,925,000',
+    avgPpsf: '$762/SF',
+    soldCount: 4,
+    listedCount: 3,
+    comps: [
+      {
+        address: '1412 Cherry Ave',
+        city: 'San Jose',
+        status: 'sold',
+        price: '$1,765,000',
+        beds: '3',
+        baths: '2',
+        sqft: '1,842 SF',
+        dateLabel: 'Jun 12, 2026',
+        pricePerSqft: '$958/SF',
+        photo: '',
+        url: '',
+      },
+      {
+        address: '1188 Minnesota Ave',
+        city: 'San Jose',
+        status: 'sold',
+        price: '$1,920,000',
+        beds: '4',
+        baths: '3',
+        sqft: '2,310 SF',
+        dateLabel: 'May 28, 2026',
+        pricePerSqft: '$831/SF',
+        photo: '',
+        url: '',
+      },
+      {
+        address: '1540 Willow St',
+        city: 'San Jose',
+        status: 'sold',
+        price: '$1,698,000',
+        beds: '3',
+        baths: '2.5',
+        sqft: '1,760 SF',
+        dateLabel: 'Apr 9, 2026',
+        pricePerSqft: '$965/SF',
+        photo: '',
+        url: '',
+      },
+      {
+        address: '889 Lincoln Ave',
+        city: 'San Jose',
+        status: 'sold',
+        price: '$2,050,000',
+        beds: '4',
+        baths: '3',
+        sqft: '2,540 SF',
+        dateLabel: 'Mar 21, 2026',
+        pricePerSqft: '$807/SF',
+        photo: '',
+        url: '',
+      },
+      {
+        address: '1320 Camino Ramon',
+        city: 'San Jose',
+        status: 'listed',
+        price: '$1,849,000',
+        beds: '4',
+        baths: '2',
+        sqft: '2,180 SF',
+        dateLabel: '12 days on market',
+        pricePerSqft: '$848/SF',
+        photo: '',
+        url: '',
+      },
+      {
+        address: '760 Coe Ave',
+        city: 'San Jose',
+        status: 'listed',
+        price: '$1,995,000',
+        beds: '4',
+        baths: '3',
+        sqft: '2,405 SF',
+        dateLabel: '6 days on market',
+        pricePerSqft: '$829/SF',
+        photo: '',
+        url: '',
+      },
+      {
+        address: '2015 Booksin Ave',
+        city: 'San Jose',
+        status: 'pending',
+        price: '$1,875,000',
+        beds: '3',
+        baths: '2',
+        sqft: '1,990 SF',
+        dateLabel: 'Pending',
+        pricePerSqft: '$942/SF',
+        photo: '',
+        url: '',
+      },
+    ],
   },
 }

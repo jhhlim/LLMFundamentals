@@ -14,6 +14,7 @@ import { HeroSection } from './components/HeroSection'
 import { PropertyStats } from './components/PropertyStats'
 import { ImageGallery } from './components/ImageGallery'
 import { NeighborhoodSection } from './components/NeighborhoodSection'
+import { MarketTrendsSection } from './components/MarketTrendsSection'
 import { FeatureGrid } from './components/FeatureGrid'
 import { LifestyleSection } from './components/LifestyleSection'
 import { AgentSection } from './components/AgentSection'
@@ -168,6 +169,7 @@ export default function App() {
           <PropertyStats listing={listing} />
           <ImageGallery listing={listing} />
           <NeighborhoodSection listing={listing} />
+          <MarketTrendsSection listing={listing} />
           <FeatureGrid listing={listing} />
           <LifestyleSection listing={listing} />
           <AgentSection listing={listing} />
