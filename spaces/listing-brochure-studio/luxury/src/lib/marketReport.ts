@@ -164,6 +164,7 @@ const ARRAY_KEYS = [
   'properties',
   'results',
   'similarHomes',
+  'similarProperties',
   'similarListings',
   'nearbyHomes',
   'nearbySales',
@@ -173,6 +174,8 @@ const ARRAY_KEYS = [
   'recentlySold',
   'data',
   'searchResults',
+  'recommendedHomes',
+  'relatedProperties',
 ]
 
 function looksLikeProperty(raw: Record<string, unknown>): boolean {

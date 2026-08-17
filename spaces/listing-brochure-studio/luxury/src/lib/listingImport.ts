@@ -1887,13 +1887,32 @@ function mergeCompLists(...lists: MarketComp[][]): MarketComp[] {
   return out
 }
 
-async function tryComps(host: string, path: string, apiKey: string, fallback?: 'sold' | 'listed'): Promise<MarketComp[]> {
+async function tryComps(
+  host: string,
+  path: string,
+  apiKey: string,
+  fallback?: 'sold' | 'listed',
+): Promise<{ comps: MarketComp[]; error?: string }> {
   try {
     const json = await rapidGet(host, path, apiKey)
-    return compsFromPayload(json, fallback)
-  } catch {
-    return []
+    const comps = compsFromPayload(json, fallback)
+    return { comps }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { comps: [], error: `${RAPIDAPI_PRODUCT[host] || host}: ${message}` }
   }
+}
+
+function propertyCompQueries(zpid: string | null, sourceUrl: string, listing: Listing): string[] {
+  const queries: string[] = []
+  const address = fullAddress(listing)
+  if (zpid) queries.push(`zpid=${encodeURIComponent(zpid)}`)
+  if (sourceUrl.trim()) {
+    const encUrl = encodeURIComponent(sourceUrl.trim())
+    queries.push(`url=${encUrl}`, `property_url=${encUrl}`)
+  }
+  if (address.trim()) queries.push(`address=${encodeURIComponent(address.trim())}`)
+  return [...new Set(queries)]
 }
 
 async function fetchZillowMarketComps(
@@ -1901,45 +1920,49 @@ async function fetchZillowMarketComps(
   apiKey: string,
   sourceUrl: string,
   raw?: Record<string, unknown>,
-): Promise<MarketComp[]> {
+): Promise<{ comps: MarketComp[]; errors: string[] }> {
   const zpid = extractZpidFromRaw(raw, sourceUrl)
   const coords = extractLatLon(raw)
   const locations = locationCandidates(listing).slice(0, 3)
   const beds = bedsHint(listing)
   const bedMinQs = beds.min != null ? `&bedsMin=${beds.min}` : ''
+  const idQueries = propertyCompQueries(zpid, sourceUrl, listing)
   const batches: MarketComp[][] = []
+  const errors: string[] = []
+  const pushErrors = (list: Array<{ error?: string }>) => {
+    for (const row of list) {
+      if (row.error && !errors.includes(row.error)) errors.push(row.error)
+    }
+  }
 
   if (raw) batches.push(compsFromPayload(raw))
 
-  const compPaths = zpid
-    ? [`/propertyComps?zpid=${zpid}`, `/property/comps?zpid=${zpid}`, `/comps?zpid=${zpid}`]
-    : []
+  type Attempt = { host: string; path: string; fallback?: 'sold' | 'listed' }
+  const attempts: Attempt[] = []
 
-  for (const host of [HOSTS.zillowCom1, HOSTS.zillowMarket]) {
-    for (const path of compPaths) {
-      const batch = await tryComps(host, path, apiKey)
-      if (batch.length) batches.push(batch)
-      await sleep(200)
-      if (mergeCompLists(...batches).length >= 4) return mergeCompLists(...batches)
+  for (const q of idQueries) {
+    attempts.push(
+      { host: HOSTS.zillow56, path: `/similar_sold_properties?${q}`, fallback: 'sold' },
+      { host: HOSTS.zillow56, path: `/similar_properties?${q}`, fallback: 'listed' },
+    )
+    for (const host of [HOSTS.zillowCom1, HOSTS.zillowMarket]) {
+      attempts.push({ host, path: `/propertyComps?${q}` })
     }
   }
 
   for (const loc of locations) {
     const locQs = encodeURIComponent(loc)
+    attempts.push({ host: HOSTS.zillow56, path: `/search?location=${locQs}` })
     for (const status of [
       { type: 'RecentlySold', fallback: 'sold' as const },
       { type: 'ForSale', fallback: 'listed' as const },
     ]) {
       for (const host of [HOSTS.zillowCom1, HOSTS.zillowMarket]) {
-        const batch = await tryComps(
+        attempts.push({
           host,
-          `/propertyExtendedSearch?location=${locQs}&status_type=${status.type}&home_type=Houses${bedMinQs}`,
-          apiKey,
-          status.fallback,
-        )
-        if (batch.length) batches.push(batch)
-        await sleep(200)
-        if (mergeCompLists(...batches).length >= 6) return mergeCompLists(...batches)
+          path: `/propertyExtendedSearch?location=${locQs}&status_type=${status.type}&home_type=Houses${bedMinQs}`,
+          fallback: status.fallback,
+        })
       }
     }
   }
@@ -1949,14 +1972,11 @@ async function fetchZillowMarketComps(
       { q: 'RECENTLY_SOLD', fallback: 'sold' as const },
       { q: 'FOR_SALE', fallback: 'listed' as const },
     ]) {
-      const batch = await tryComps(
-        HOSTS.zillowRt,
-        `/search-coordinates?latitude=${coords.lat}&longitude=${coords.lng}&home_status=${status.q}`,
-        apiKey,
-        status.fallback,
-      )
-      if (batch.length) batches.push(batch)
-      await sleep(200)
+      attempts.push({
+        host: HOSTS.zillowRt,
+        path: `/search-coordinates?latitude=${coords.lat}&longitude=${coords.lng}&home_status=${status.q}`,
+        fallback: status.fallback,
+      })
     }
   }
 
@@ -1966,29 +1986,34 @@ async function fetchZillowMarketComps(
       { q: 'RECENTLY_SOLD', fallback: 'sold' as const },
       { q: 'FOR_SALE', fallback: 'listed' as const },
     ]) {
-      const batch = await tryComps(
-        HOSTS.zillowRt,
-        `/search?location=${locQs}&home_status=${status.q}`,
-        apiKey,
-        status.fallback,
-      )
-      if (batch.length) batches.push(batch)
-      await sleep(200)
+      attempts.push({
+        host: HOSTS.zillowRt,
+        path: `/search?location=${locQs}&home_status=${status.q}`,
+        fallback: status.fallback,
+      })
     }
   }
 
-  return mergeCompLists(...batches)
+  for (const { host, path, fallback } of attempts) {
+    const result = await tryComps(host, path, apiKey, fallback)
+    if (result.error) pushErrors([result])
+    if (result.comps.length) batches.push(result.comps)
+    await sleep(180)
+    if (mergeCompLists(...batches).length >= 8) break
+  }
+
+  return { comps: mergeCompLists(...batches), errors }
 }
 
 async function fetchRedfinMarketComps(
   apiKey: string,
   raw?: Record<string, unknown>,
   sourceUrl?: string,
-): Promise<MarketComp[]> {
+): Promise<{ comps: MarketComp[]; errors: string[] }> {
   const { propertyId, listingId } = extractRedfinIds(raw || {})
   const pid = propertyId || extractRedfinPropertyId(sourceUrl || '') || ''
   const lid = listingId || pid
-  if (!pid) return raw ? compsFromPayload(raw) : []
+  if (!pid) return { comps: raw ? compsFromPayload(raw) : [], errors: [] }
 
   const q = `propertyId=${encodeURIComponent(pid)}&listingId=${encodeURIComponent(lid)}`
   const paths: Array<{ path: string; status?: 'sold' | 'listed' }> = [
@@ -2001,16 +2026,45 @@ async function fetchRedfinMarketComps(
     { path: `/nearbyhomes?${q}` },
   ]
   const batches: MarketComp[][] = []
+  const errors: string[] = []
   if (raw) batches.push(compsFromPayload(raw))
 
   for (const row of paths) {
-    const batch = await tryComps(HOSTS.redfin, row.path, apiKey, row.status)
-    if (batch.length) batches.push(batch)
+    const result = await tryComps(HOSTS.redfin, row.path, apiKey, row.status)
+    if (result.error && !errors.includes(result.error)) errors.push(result.error)
+    if (result.comps.length) batches.push(result.comps)
     await sleep(200)
     if (mergeCompLists(...batches).length >= 8) break
   }
 
-  return mergeCompLists(...batches)
+  return { comps: mergeCompLists(...batches), errors }
+}
+
+function emptyCompsSummary(
+  source: ListingSource,
+  errors: string[],
+): string {
+  const notSubscribed = errors.filter((e) => /not subscribed|401|403/i.test(e))
+  const rateLimited = errors.filter((e) => /rate limit|429/i.test(e))
+  const uniqueProducts = [...new Set(notSubscribed.map((e) => e.split(':')[0]))]
+
+  if (notSubscribed.length && uniqueProducts.length) {
+    return (
+      `Market comps need a separate RapidAPI subscription from listing import. ` +
+      `Your key worked for the property page, but not for search/comps on: ${uniqueProducts.slice(0, 3).join(', ')}. ` +
+      `Subscribe to Zillow (zillow-com1 or zillow56) or Redfin on RapidAPI, then use New URL to re-import.`
+    )
+  }
+  if (rateLimited.length) {
+    return 'RapidAPI rate-limited the comp search. Wait a minute and re-import with New URL.'
+  }
+  if (source === 'zillow') {
+    return (
+      'No nearby comps returned for this area. Listing import and comp search use different RapidAPI products — ' +
+      'subscribe to zillow-com1 or zillow56 (similar_sold_properties / propertyExtendedSearch), then re-import.'
+    )
+  }
+  return 'No nearby comps came back. Add a Zillow RapidAPI key (zillow-com1 or zillow56) for ZIP search, or re-import from Redfin for similar-home endpoints.'
 }
 
 async function fetchMarketReport(
@@ -2024,6 +2078,7 @@ async function fetchMarketReport(
   const apiKey = importApiKey?.trim() || portalKeyForSource(source, keys)
   const all: MarketComp[] = []
   const sources: string[] = []
+  const compErrors: string[] = []
 
   if (raw) {
     const embedded = compsFromPayload(raw)
@@ -2034,13 +2089,15 @@ async function fetchMarketReport(
   }
 
   if (source === 'zillow' && apiKey) {
-    const zillowComps = await fetchZillowMarketComps(listing, apiKey, sourceUrl, raw)
+    const { comps: zillowComps, errors } = await fetchZillowMarketComps(listing, apiKey, sourceUrl, raw)
+    compErrors.push(...errors)
     if (zillowComps.length) {
       all.push(...zillowComps)
       if (!sources.includes('Zillow')) sources.push('Zillow')
     }
   } else if (source === 'redfin' && apiKey) {
-    const redfinComps = await fetchRedfinMarketComps(apiKey, raw, sourceUrl)
+    const { comps: redfinComps, errors } = await fetchRedfinMarketComps(apiKey, raw, sourceUrl)
+    compErrors.push(...errors)
     if (redfinComps.length) {
       all.push(...redfinComps)
       sources.push('Redfin')
@@ -2049,7 +2106,8 @@ async function fetchMarketReport(
 
   const zillowKey = keys.zillow?.trim() || (source === 'zillow' ? apiKey : '')
   if (zillowKey && source !== 'zillow' && mergeCompLists(all).length < 6) {
-    const extra = await fetchZillowMarketComps(listing, zillowKey, sourceUrl, raw)
+    const { comps: extra, errors } = await fetchZillowMarketComps(listing, zillowKey, sourceUrl, raw)
+    compErrors.push(...errors)
     if (extra.length) {
       all.push(...extra)
       if (!sources.includes('Zillow')) sources.push('Zillow')
@@ -2058,7 +2116,8 @@ async function fetchMarketReport(
 
   const redfinKey = keys.redfin?.trim() || (source === 'redfin' ? apiKey : '')
   if (redfinKey && source !== 'redfin' && mergeCompLists(all).length < 6) {
-    const extra = await fetchRedfinMarketComps(redfinKey, raw, sourceUrl)
+    const { comps: extra, errors } = await fetchRedfinMarketComps(redfinKey, raw, sourceUrl)
+    compErrors.push(...errors)
     if (extra.length) {
       all.push(...extra)
       if (!sources.includes('Redfin')) sources.push('Redfin')
@@ -2069,10 +2128,7 @@ async function fetchMarketReport(
 
   if (!merged.length) {
     const empty = emptyMarketReport([listing.neighborhood, listing.city, listing.zip].filter(Boolean).join(' · '))
-    empty.summary =
-      source === 'zillow'
-        ? 'Market search returned no comps for this area. On RapidAPI, confirm zillow-com1 includes propertyExtendedSearch or propertyComps, then re-import.'
-        : 'No nearby comps came back. Add a Zillow RapidAPI key (zillow-com1) for ZIP search, or re-import from Redfin for similar-home endpoints.'
+    empty.summary = emptyCompsSummary(source, compErrors)
     return empty
   }
 

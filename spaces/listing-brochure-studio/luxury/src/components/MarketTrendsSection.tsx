@@ -99,10 +99,16 @@ export function MarketTrendsSection({ listing }: { listing: Listing }) {
           </div>
         ) : (
           <p className="mt-10 max-w-xl text-sm leading-relaxed text-stone dark:text-stone-light/70">
-            Re-import the listing after confirming your RapidAPI key is subscribed to{' '}
-            <strong className="text-ink dark:text-white/85">zillow-com1</strong> (propertyExtendedSearch /
-            propertyComps) or Redfin similar-home endpoints. Market data loads during import — use New URL and
-            generate again if this page is empty.
+            {market.summary}
+            {!market.comps.length ? (
+              <>
+                {' '}
+                Use <strong className="text-ink dark:text-white/85">New URL</strong> to re-import after subscribing
+                on RapidAPI to{' '}
+                <strong className="text-ink dark:text-white/85">zillow-com1</strong>,{' '}
+                <strong className="text-ink dark:text-white/85">zillow56</strong>, or Redfin similar-home endpoints.
+              </>
+            ) : null}
           </p>
         )}
 
