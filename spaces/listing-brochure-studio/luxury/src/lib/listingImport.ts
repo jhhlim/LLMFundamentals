@@ -1473,44 +1473,74 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string): Lis
   )
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function retryAfterMs(res: Response, attempt: number): number {
+  const header = res.headers.get('retry-after')
+  const fromHeader = header ? Number(header) : NaN
+  if (Number.isFinite(fromHeader) && fromHeader > 0) {
+    return Math.min(fromHeader * (fromHeader > 50 ? 1 : 1000), 12000)
+  }
+  return Math.min(1600 * 2 ** attempt, 10000)
+}
+
 async function rapidGet(host: string, path: string, apiKey: string): Promise<Record<string, unknown>> {
-  const res = await fetch(`https://${host}${path}`, {
-    headers: {
-      'x-rapidapi-key': apiKey,
-      'x-rapidapi-host': host,
-    },
-  })
-  const text = await res.text()
-  let json: Record<string, unknown> = {}
-  try {
-    json = JSON.parse(text) as Record<string, unknown>
-  } catch {
-    throw new Error(`API returned non-JSON (${res.status}).`)
+  const maxAttempts = 4
+  let lastStatus = 0
+  let lastMessage = ''
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const res = await fetch(`https://${host}${path}`, {
+      headers: {
+        'x-rapidapi-key': apiKey,
+        'x-rapidapi-host': host,
+      },
+    })
+    lastStatus = res.status
+    const text = await res.text()
+    let json: Record<string, unknown> = {}
+    try {
+      json = JSON.parse(text) as Record<string, unknown>
+    } catch {
+      throw new Error(`API returned non-JSON (${res.status}).`)
+    }
+    const apiMessage = asString(json.message || json.error)
+    lastMessage = apiMessage
+
+    if (/quota|exceeded|upgrade your plan/i.test(apiMessage) && !/too many requests|rate limit/i.test(apiMessage)) {
+      throw new Error(
+        'RapidAPI monthly quota exceeded for this listing API. Upgrade the plan on RapidAPI, or wait until quota resets, then re-import.',
+      )
+    }
+    if (res.status === 401 || res.status === 403) {
+      throw new PortalFetchError(`Not subscribed to ${RAPIDAPI_PRODUCT[host] || host} on RapidAPI.`, true)
+    }
+    if (res.status === 429 || /too many requests|rate limit/i.test(apiMessage)) {
+      if (attempt < maxAttempts - 1) {
+        await sleep(retryAfterMs(res, attempt))
+        continue
+      }
+      throw new PortalFetchError(
+        `Rate limited on ${RAPIDAPI_PRODUCT[host] || host}. Wait about a minute and retry.`,
+        true,
+      )
+    }
+    if (res.status === 404 || /endpoint.*does not exist|not found/i.test(apiMessage)) {
+      throw new PortalFetchError(apiMessage || `Endpoint not found on ${host}`, true)
+    }
+    if (res.status >= 400) {
+      throw new PortalFetchError(apiMessage || `API error ${res.status}`, res.status >= 500)
+    }
+    if (json.success === false) {
+      const msg = asString(json.error || json.message, 'Listing fetch failed')
+      throw new PortalFetchError(msg, /not found|invalid url|no data/i.test(msg))
+    }
+    return json
   }
-  const apiMessage = asString(json.message || json.error)
-  if (/quota|exceeded|upgrade your plan/i.test(apiMessage)) {
-    throw new Error(
-      'RapidAPI monthly quota exceeded for this listing API. Upgrade the plan on RapidAPI, or wait until quota resets, then re-import.',
-    )
-  }
-  if (res.status === 401 || res.status === 403) {
-    throw new PortalFetchError(
-      `Not subscribed to ${RAPIDAPI_PRODUCT[host] || host} on RapidAPI.`,
-      true,
-    )
-  }
-  if (res.status === 429) throw new Error('Rate limit hit. Wait a moment and retry.')
-  if (res.status === 404 || /endpoint.*does not exist|not found/i.test(apiMessage)) {
-    throw new PortalFetchError(apiMessage || `Endpoint not found on ${host}`, true)
-  }
-  if (res.status >= 400) {
-    throw new PortalFetchError(apiMessage || `API error ${res.status}`, res.status >= 500)
-  }
-  if (json.success === false) {
-    const msg = asString(json.error || json.message, 'Listing fetch failed')
-    throw new PortalFetchError(msg, /not found|invalid url|no data/i.test(msg))
-  }
-  return json
+
+  throw new PortalFetchError(lastMessage || `API error ${lastStatus}`, true)
 }
 
 async function fetchPortalRaw(
@@ -1529,6 +1559,7 @@ async function fetchPortalRaw(
       const data = unwrap(json)
       if (!acceptPayload(data)) {
         failures.push(`${RAPIDAPI_PRODUCT[host] || host}: response had no listing fields`)
+        await sleep(200)
         continue
       }
       return data
@@ -1537,8 +1568,13 @@ async function fetchPortalRaw(
       const product = RAPIDAPI_PRODUCT[host] || host
       failures.push(`${product}: ${error.message}`)
 
-      if (/quota|exceeded|rate limit/i.test(error.message)) throw error
-      if (err instanceof PortalFetchError && err.skippable) continue
+      if (/quota|exceeded|upgrade your plan/i.test(error.message) && !/rate limit/i.test(error.message)) {
+        throw error
+      }
+      if (err instanceof PortalFetchError && err.skippable) {
+        await sleep(200)
+        continue
+      }
       lastFatal = error
     }
   }
@@ -1643,7 +1679,7 @@ async function fetchZillowRaw(url: string, apiKey: string): Promise<Record<strin
 
   let data = await fetchPortalRaw(attempts, apiKey, 'Zillow', unwrapZillowPayload)
 
-  if (zpid) {
+  if (zpid && extractListingPhotos(data).length < 4) {
     for (const { host, path } of [
       { host: HOSTS.zillowCom1, path: `/images?zpid=${zpid}` },
       { host: HOSTS.zillowRt, path: `/images?zpid=${zpid}` },
@@ -1720,28 +1756,15 @@ async function fetchRedfinRaw(url: string, apiKey: string): Promise<Record<strin
 
     const enrichPaths = [
       `/above_the_fold?${accessQuery}`,
-      `/aboveTheFold?${accessQuery}`,
-      `/below_the_fold?${accessQuery}`,
-      `/belowTheFold?${accessQuery}`,
       `/photos?${idQuery}`,
-      `/property/photos?${idQuery}`,
-      `/hood_photos?propertyId=${encodeURIComponent(propertyId)}`,
-      `/tour_insights?${accessQuery}`,
-      `/tourInsights?${accessQuery}`,
       `/walk_score?${accessQuery}`,
-      `/walkScore?${accessQuery}`,
-      `/walkAndBikeScore?${accessQuery}`,
-      `/walk_and_bike_score?${accessQuery}`,
+      `/below_the_fold?${accessQuery}`,
       `/mainHouseInfoPanelInfo?${accessQuery}`,
-      `/main_house_info_panel_info?${accessQuery}`,
-      `/property/details?${idQuery}`,
     ]
 
-    const extras = await Promise.all(
-      enrichPaths.map((path) => tryRedfinMerge({}, HOSTS.redfin, path, apiKey)),
-    )
-    for (const extra of extras) {
-      data = mergeRecordFields(data, extra)
+    for (const path of enrichPaths) {
+      data = await tryRedfinMerge(data, HOSTS.redfin, path, apiKey)
+      await sleep(250)
     }
   }
 
