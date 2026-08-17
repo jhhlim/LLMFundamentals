@@ -158,7 +158,7 @@ export function ImportPanel({
               />
               <KeyField
                 label="Zillow"
-                hint="Zillow Scraper API (/zillow/property/{zpid}) or Real-Time Real-Estate Data (/property-details?url=…)"
+                hint="Subscribe to a Zillow product on RapidAPI first (a key alone is not enough). Recommended: Zillow by apimaker — rapidapi.com/apimaker/api/zillow-com1 — then paste the same account key here."
                 value={keys.zillow || ''}
                 onChange={(zillow) => setKeys((k) => ({ ...k, zillow }))}
               />

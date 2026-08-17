@@ -7,8 +7,13 @@ const BRAND_AGENT = demoListing.agent
 const HOSTS = {
   compass: 'compass-com-real-estate-data-api.p.rapidapi.com',
   zillow: 'zillow-scraper-api.p.rapidapi.com',
+  zillowCom1: 'zillow-com1.p.rapidapi.com',
   zillowAlt: 'real-time-real-estate-data.p.rapidapi.com',
+  zillowRt: 'real-time-zillow-data.p.rapidapi.com',
   zillow56: 'zillow56.p.rapidapi.com',
+  zillowWorking: 'zillow-working-api.p.rapidapi.com',
+  zillowWorking2: 'zllw-working-api.p.rapidapi.com',
+  zillowUs: 'us-property-data.p.rapidapi.com',
   redfin: 'redfin-com-data-api.p.rapidapi.com',
   redfinAlt: 'real-time-redfin-data.p.rapidapi.com',
 } as const
@@ -17,11 +22,22 @@ const HOSTS = {
 const RAPIDAPI_PRODUCT: Record<string, string> = {
   [HOSTS.compass]: 'Compass.com Real Estate Data API',
   [HOSTS.zillow]: 'Zillow Scraper API',
+  [HOSTS.zillowCom1]: 'Zillow (zillow-com1)',
   [HOSTS.zillowAlt]: 'Real-Time Real-Estate Data',
+  [HOSTS.zillowRt]: 'Real-Time Zillow Data',
   [HOSTS.zillow56]: 'Zillow56',
+  [HOSTS.zillowWorking]: 'Zillow Working API',
+  [HOSTS.zillowWorking2]: 'ZLLW Working API',
+  [HOSTS.zillowUs]: 'US Property Data',
   [HOSTS.redfin]: 'Redfin.com Data API',
   [HOSTS.redfinAlt]: 'Real-Time Redfin Data',
 }
+
+const ZILLOW_SUBSCRIBE_HELP =
+  'A RapidAPI key is not enough — subscribe to one Zillow product, then retry with the same key: ' +
+  'https://rapidapi.com/apimaker/api/zillow-com1 (recommended) · ' +
+  'https://rapidapi.com/s.mahmoud97/api/zillow56 · ' +
+  'https://rapidapi.com/letscrape-6bRBa3QguO5/api/real-time-zillow-data'
 
 class PortalFetchError extends Error {
   skippable: boolean
@@ -1529,13 +1545,13 @@ async function fetchPortalRaw(
 
   if (lastFatal && failures.length <= 1) throw lastFatal
 
-  const tried = attempts.map((a) => RAPIDAPI_PRODUCT[a.host] || a.host).join(' · ')
+  const tried = [...new Set(attempts.map((a) => RAPIDAPI_PRODUCT[a.host] || a.host))].join(' · ')
   throw new Error(
     `${portalLabel} import failed after trying: ${tried}. ` +
-      (failures.length
-        ? `Details: ${failures.join(' | ')}. `
-        : '') +
-      `Subscribe to one of those products on RapidAPI (same account key works once subscribed), then retry.`,
+      (failures.length ? `Details: ${failures.join(' | ')}. ` : '') +
+      (portalLabel === 'Zillow'
+        ? ZILLOW_SUBSCRIBE_HELP
+        : 'Subscribe to one of those products on RapidAPI (same account key works once subscribed), then retry.'),
   )
 }
 
@@ -1564,30 +1580,86 @@ async function fetchCompassRaw(url: string, apiKey: string): Promise<Record<stri
   )
 }
 
-async function fetchZillowRaw(url: string, apiKey: string): Promise<Record<string, unknown>> {
-  const zpid = extractZpid(url)
-  const attempts: Array<{ host: string; path: string }> = []
-
-  if (zpid) {
-    attempts.push({ host: HOSTS.zillow, path: `/zillow/property/${zpid}` })
-    attempts.push({ host: HOSTS.zillow56, path: `/property?zpid=${zpid}` })
+function unwrapZillowPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  let data = unwrapCompassPayload(payload)
+  if (data.props && typeof data.props === 'object' && !Array.isArray(data.props)) {
+    data = { ...data, ...(data.props as Record<string, unknown>) }
   }
-  // Unified real-estate API last — often a separate subscription from Zillow Scraper
-  attempts.push({ host: HOSTS.zillowAlt, path: `/property-details?url=${encodeURIComponent(url)}` })
+  if (data.address && typeof data.address === 'object' && !Array.isArray(data.address)) {
+    const addr = data.address as Record<string, unknown>
+    data = {
+      ...data,
+      street_address: data.street_address || addr.streetAddress || addr.street,
+      city: data.city || addr.city,
+      state: data.state || addr.state,
+      zip: data.zip || addr.zipcode || addr.zipCode || addr.zip,
+      neighborhood: data.neighborhood || addr.neighborhood || addr.community,
+    }
+  }
+  if (data.resoFacts && typeof data.resoFacts === 'object' && !Array.isArray(data.resoFacts)) {
+    const facts = data.resoFacts as Record<string, unknown>
+    data = {
+      ...data,
+      ...facts,
+      resoFacts: facts,
+      beds: data.beds ?? facts.bedrooms ?? facts.beds,
+      baths: data.baths ?? facts.bathrooms ?? facts.baths,
+      sqft: data.sqft ?? facts.livingArea ?? facts.livingAreaValue,
+      lot_size_sqft: data.lot_size_sqft ?? facts.lotSize ?? facts.lotSizeSquareFeet,
+      year_built: data.year_built ?? facts.yearBuilt,
+      garageSpaces: data.garageSpaces ?? facts.garageSpaces ?? facts.parkingCapacity,
+    }
+  }
+  const photos = [
+    ...flattenPhotoUrls(data.photos),
+    ...flattenPhotoUrls(data.hugePhotos),
+    ...flattenPhotoUrls(data.originalPhotos),
+    ...flattenPhotoUrls(data.responsivePhotos),
+    ...flattenPhotoUrls(data.images),
+  ]
+  if (typeof data.imgSrc === 'string') photos.unshift(data.imgSrc)
+  if (photos.length) {
+    data = { ...data, photos: [...new Set(photos)], image_urls: [...new Set(photos)] }
+  }
+  return data
+}
 
-  let data = await fetchPortalRaw(attempts, apiKey, 'Zillow')
+async function fetchZillowRaw(url: string, apiKey: string): Promise<Record<string, unknown>> {
+  const encoded = encodeURIComponent(url)
+  const zpid = extractZpid(url)
+  const attempts: Array<{ host: string; path: string }> = [
+    { host: HOSTS.zillowCom1, path: `/propertyByUrl?url=${encoded}` },
+    { host: HOSTS.zillowCom1, path: `/property?url=${encoded}` },
+    { host: HOSTS.zillowRt, path: `/propertyByUrl?url=${encoded}` },
+    { host: HOSTS.zillowWorking, path: `/byurl?url=${encoded}` },
+    { host: HOSTS.zillow, path: zpid ? `/zillow/property/${zpid}` : `/zillow/property?url=${encoded}` },
+    { host: HOSTS.zillowAlt, path: `/property-details?url=${encoded}` },
+  ]
+  if (zpid) {
+    attempts.unshift({ host: HOSTS.zillow56, path: `/propertyV2?zpid=${zpid}` })
+    attempts.push({ host: HOSTS.zillowWorking2, path: `/byzpid?zpid=${zpid}` })
+    attempts.push({ host: HOSTS.zillowUs, path: `/api/v1/property/detail?zpid=${zpid}` })
+  }
+
+  let data = await fetchPortalRaw(attempts, apiKey, 'Zillow', unwrapZillowPayload)
 
   if (zpid) {
-    try {
-      const photosJson = await rapidGet(HOSTS.zillow, `/zillow/photos/${zpid}`, apiKey)
-      const photoPayload = unwrapCompassPayload(photosJson)
-      const extra = extractListingPhotos(photoPayload)
-      if (extra.length) {
-        const merged = [...extractListingPhotos(data), ...extra]
-        data = { ...data, photos: [...new Set(merged)], image_urls: [...new Set(merged)] }
+    for (const { host, path } of [
+      { host: HOSTS.zillowCom1, path: `/images?zpid=${zpid}` },
+      { host: HOSTS.zillowRt, path: `/images?zpid=${zpid}` },
+      { host: HOSTS.zillow, path: `/zillow/photos/${zpid}` },
+    ]) {
+      try {
+        const photosJson = await rapidGet(host, path, apiKey)
+        const extra = extractListingPhotos(unwrapZillowPayload(photosJson))
+        if (extra.length) {
+          const merged = [...extractListingPhotos(data), ...extra]
+          data = { ...data, photos: [...new Set(merged)], image_urls: [...new Set(merged)] }
+          break
+        }
+      } catch {
+        // Optional photo enrichment
       }
-    } catch {
-      // Optional photo enrichment
     }
   }
 
@@ -1767,7 +1839,7 @@ export async function importListingFromUrl(url: string, keys: PortalApiKeys | st
       source === 'compass'
         ? 'Compass.com Real Estate Data API'
         : source === 'zillow'
-          ? 'Zillow Scraper API (recommended) or Zillow56'
+          ? 'Zillow (zillow-com1) on RapidAPI — click Subscribe, then paste the same account key'
           : 'Redfin.com Data API (recommended) or Real-Time Redfin Data'
     throw new Error(`Add your RapidAPI key for ${sourceLabel(source)}. Subscribe to ${products} on RapidAPI.`)
   }
