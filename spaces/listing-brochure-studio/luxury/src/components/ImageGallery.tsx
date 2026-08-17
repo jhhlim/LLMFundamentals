@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
 import type { Listing } from '../data/listing'
+import { BROCHURE_SECTIONS } from '../lib/sectionNav'
 import { FadeIn } from './ui/FadeIn'
 import { cn } from '../lib/utils'
 
@@ -7,7 +8,10 @@ export function ImageGallery({ listing }: { listing: Listing }) {
   const gallery = listing.images.length > 1 ? listing.images.slice(1) : listing.images
 
   return (
-    <section className="brochure-page surface-light px-6 py-16 md:px-12 md:py-20 lg:px-16">
+    <section
+      id={BROCHURE_SECTIONS[2].id}
+      className="brochure-page brochure-section surface-light px-6 py-16 md:px-12 md:py-20 lg:px-16"
+    >
       <div className="mx-auto max-w-6xl">
         <FadeIn>
           <p className="eyebrow">Residences in frame</p>

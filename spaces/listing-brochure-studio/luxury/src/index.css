@@ -46,6 +46,19 @@
     min-height: 100vh;
   }
 
+  .brochure-section {
+    scroll-margin-top: 8.5rem;
+  }
+
+  .section-nav-scroll {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .section-nav-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
   .editorial-display {
     @apply font-serif font-medium tracking-[-0.02em] leading-[1.05];
   }

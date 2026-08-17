@@ -23,6 +23,7 @@ import { Toolbar } from './components/Toolbar'
 import { PrintBrochure } from './components/PrintBrochure'
 import { EditFactsPanel } from './components/EditFactsPanel'
 import { AuthScreen } from './components/AuthScreen'
+import { SectionNav } from './components/SectionNav'
 import { AgentProfilePanel } from './components/AgentProfilePanel'
 
 function hasMissingStats(listing: Listing) {
@@ -161,6 +162,7 @@ export default function App() {
             : ''}
           {importNotice && !usedExamplePhotos ? ` ${importNotice}` : ''}
         </div>
+        <SectionNav />
       </div>
 
       <div className="screen-only">

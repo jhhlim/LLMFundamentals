@@ -2,6 +2,7 @@ import { motion, useScroll, useTransform } from 'framer-motion'
 import { useRef } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import type { Listing } from '../data/listing'
+import { BROCHURE_SECTIONS } from '../lib/sectionNav'
 
 export function HeroSection({ listing }: { listing: Listing }) {
   const ref = useRef<HTMLElement>(null)
@@ -10,7 +11,11 @@ export function HeroSection({ listing }: { listing: Listing }) {
   const scale = useTransform(scrollYProgress, [0, 1], [1.08, 1])
 
   return (
-    <section ref={ref} className="brochure-page relative text-white">
+    <section
+      ref={ref}
+      id={BROCHURE_SECTIONS[0].id}
+      className="brochure-page brochure-section relative text-white"
+    >
       <div className="absolute inset-0 overflow-hidden bg-ink">
         {listing.images[0]?.src ? (
           <motion.img

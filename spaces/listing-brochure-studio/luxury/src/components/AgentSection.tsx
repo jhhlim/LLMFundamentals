@@ -1,6 +1,7 @@
 import { QRCodeSVG } from 'qrcode.react'
 import { Globe, Mail, Phone } from 'lucide-react'
 import type { Listing } from '../data/listing'
+import { BROCHURE_SECTIONS } from '../lib/sectionNav'
 import { displayWebsite } from '../lib/agentAuth'
 import { FadeIn } from './ui/FadeIn'
 
@@ -8,7 +9,10 @@ export function AgentSection({ listing }: { listing: Listing }) {
   const { agent } = listing
 
   return (
-    <section className="brochure-page surface-ink relative overflow-hidden">
+    <section
+      id={BROCHURE_SECTIONS[7].id}
+      className="brochure-page brochure-section surface-ink relative overflow-hidden"
+    >
       <div className="absolute inset-0">
         <img
           src={listing.images[0]?.src}
