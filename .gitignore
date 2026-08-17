@@ -7,6 +7,7 @@ __pycache__/
 .python-version
 luxury/node_modules/
 luxury/dist/
+<<<<<<< HEAD
 =======
 .ipynb_checkpoints/
 __pycache__/
@@ -21,3 +22,7 @@ logs/
 checkpoint-*/
 artifacts/hw6*
 >>>>>>> e99d90b41925b5196756a771fa9951f1b6b2ae14
+=======
+spaces/listing-brochure-studio/luxury/node_modules/
+spaces/listing-brochure-studio/luxury/dist/
+>>>>>>> cursor/listing-brochure-studio-c2b5
