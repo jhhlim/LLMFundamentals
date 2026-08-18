@@ -1,11 +1,11 @@
 import type { Listing } from '../data/listing'
-import { BROCHURE_SECTIONS } from '../lib/sectionNav'
+import { SECTION_IDS } from '../lib/sectionNav'
 import { FadeIn } from './ui/FadeIn'
 
 export function FeatureGrid({ listing }: { listing: Listing }) {
   return (
     <section
-      id={BROCHURE_SECTIONS[5].id}
+      id={SECTION_IDS.features}
       className="brochure-page brochure-section surface-warm-deep px-6 py-16 md:px-12 md:py-20 lg:px-16"
     >
       <div className="mx-auto max-w-6xl">

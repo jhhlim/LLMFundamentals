@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import type { Listing } from '../data/listing'
-import { BROCHURE_SECTIONS } from '../lib/sectionNav'
+import { SECTION_IDS } from '../lib/sectionNav'
 import { FadeIn } from './ui/FadeIn'
 import { cn } from '../lib/utils'
 
@@ -9,7 +9,7 @@ export function ImageGallery({ listing }: { listing: Listing }) {
 
   return (
     <section
-      id={BROCHURE_SECTIONS[2].id}
+      id={SECTION_IDS.gallery}
       className="brochure-page brochure-section surface-light px-6 py-16 md:px-12 md:py-20 lg:px-16"
     >
       <div className="mx-auto max-w-6xl">

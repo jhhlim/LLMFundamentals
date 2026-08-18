@@ -2,7 +2,7 @@ import { motion, useScroll, useTransform } from 'framer-motion'
 import { useRef } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 import type { Listing } from '../data/listing'
-import { BROCHURE_SECTIONS } from '../lib/sectionNav'
+import { SECTION_IDS } from '../lib/sectionNav'
 
 export function HeroSection({ listing }: { listing: Listing }) {
   const ref = useRef<HTMLElement>(null)
@@ -13,7 +13,7 @@ export function HeroSection({ listing }: { listing: Listing }) {
   return (
     <section
       ref={ref}
-      id={BROCHURE_SECTIONS[0].id}
+      id={SECTION_IDS.overview}
       className="brochure-page brochure-section relative text-white"
     >
       <div className="absolute inset-0 overflow-hidden bg-ink">

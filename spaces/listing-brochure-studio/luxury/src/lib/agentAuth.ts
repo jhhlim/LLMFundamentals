@@ -41,6 +41,21 @@ export type AgentAccount = Agent & {
   passwordHash: string
   salt: string
   createdAt: string
+  /** Debug banners and import diagnostics — set via admin email allowlist. */
+  isAdmin?: boolean
+}
+
+/** Emails that see debug/import banners and API warnings. */
+const ADMIN_EMAIL_KEYS = new Set(['jason.lim@compass.com'])
+
+export function isAdminAccount(account: AgentAccount | null | undefined): boolean {
+  if (!account) return false
+  return account.isAdmin === true || ADMIN_EMAIL_KEYS.has(account.emailKey)
+}
+
+function withAdminFlag(account: AgentAccount): AgentAccount {
+  if (ADMIN_EMAIL_KEYS.has(account.emailKey)) return { ...account, isAdmin: true }
+  return account
 }
 
 const ACCOUNTS_KEY = 'brochure_agent_accounts_v1'
@@ -161,7 +176,8 @@ export function loadSession(): AgentAccount | null {
   if (typeof sessionStorage === 'undefined') return null
   const id = sessionStorage.getItem(SESSION_KEY)
   if (!id) return null
-  return loadAccounts().find((a) => a.id === id) || null
+  const account = loadAccounts().find((a) => a.id === id)
+  return account ? withAdminFlag(account) : null
 }
 
 function setSession(id: string) {
@@ -267,7 +283,7 @@ export async function createAccount(input: ProfileInput): Promise<AgentAccount> 
   }
   saveAccounts([...accounts, account])
   setSession(account.id)
-  return account
+  return withAdminFlag(account)
 }
 
 export async function signIn(email: string, password: string): Promise<AgentAccount> {
@@ -276,7 +292,7 @@ export async function signIn(email: string, password: string): Promise<AgentAcco
   const hash = await hashPassword(password, account.salt)
   if (hash !== account.passwordHash) throw new Error('Incorrect password.')
   setSession(account.id)
-  return account
+  return withAdminFlag(account)
 }
 
 export async function updateAccount(id: string, input: Omit<ProfileInput, 'password'> & { password?: string }): Promise<AgentAccount> {
@@ -310,7 +326,7 @@ export async function updateAccount(id: string, input: Omit<ProfileInput, 'passw
   accounts[index] = next
   saveAccounts(accounts)
   setSession(next.id)
-  return next
+  return withAdminFlag(next)
 }
 
 export function applyAgentToListing<T extends { agent: Agent; website: string }>(listing: T, agent: Agent): T {

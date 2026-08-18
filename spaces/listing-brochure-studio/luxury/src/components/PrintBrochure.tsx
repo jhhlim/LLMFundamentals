@@ -1,6 +1,7 @@
 import { QRCodeSVG } from 'qrcode.react'
 import type { Listing } from '../data/listing'
 import { displayWebsite } from '../lib/agentAuth'
+import { SHOW_MARKET_TRENDS } from '../lib/featureFlags'
 
 /** Print-only Letter brochure — separate from the interactive scroll layout. */
 export function PrintBrochure({ listing }: { listing: Listing }) {
@@ -124,7 +125,8 @@ export function PrintBrochure({ listing }: { listing: Listing }) {
         </div>
       </section>
 
-      {/* PAGE 5 — Market comps */}
+      {/* PAGE 5 — Market comps (admin / feature flag) */}
+      {SHOW_MARKET_TRENDS ? (
       <section className="print-page print-light">
         <p className="print-kicker">Market trends</p>
         <h2>Similar homes nearby</h2>
@@ -165,8 +167,9 @@ export function PrintBrochure({ listing }: { listing: Listing }) {
           Public portal comps{listing.market.sourceLabel ? ` · ${listing.market.sourceLabel}` : ''}. Not an appraisal.
         </p>
       </section>
+      ) : null}
 
-      {/* PAGE 6 — Lifestyle + CTA */}
+      {/* Lifestyle + CTA */}
       <section className="print-page print-light">
         <p className="print-kicker">Lifestyle</p>
         <h2>How the days feel here</h2>

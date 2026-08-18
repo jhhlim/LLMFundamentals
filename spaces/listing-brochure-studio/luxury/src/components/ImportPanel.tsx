@@ -9,8 +9,9 @@ import {
   type ListingSource,
   type PortalApiKeys,
 } from '../lib/listingImport'
-import type { Agent, Listing } from '../data/listing'
+import { RapidApiDisclaimer } from './RapidApiDisclaimer'
 import { displayWebsite } from '../lib/agentAuth'
+import type { Agent, Listing } from '../data/listing'
 
 function KeyField({
   label,
@@ -131,9 +132,8 @@ export function ImportPanel({
         </div>
         <h1 className="editorial-display mt-6 text-5xl md:text-6xl">Create a luxury listing brochure</h1>
         <p className="mt-5 max-w-2xl text-base leading-relaxed text-white/70 md:text-lg">
-          Paste a listing link from Compass, Zillow, or Redfin. We scrape photos, beds/baths, living area, lot size,
-          garage, year built, walk score, and nearby sold/listed comps — then compose an editorial brochure branded with
-          your profile.
+          Paste a listing link from Compass, Zillow, or Redfin. We pull photos, beds/baths, living area, lot size,
+          garage, year built, and walk score — then compose an editorial brochure branded with your profile.
         </p>
 
         <div className="mt-10 rounded-[2rem] border border-white/10 bg-white/5 p-6 backdrop-blur-md md:p-8">
@@ -155,7 +155,7 @@ export function ImportPanel({
             </p>
           )}
 
-          <details className="mt-5 rounded-2xl border border-white/10 bg-black/20 px-4 py-3" open>
+          <details className="mt-5 rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
             <summary className="cursor-pointer text-sm text-white/80">RapidAPI keys (one per portal)</summary>
             <p className="mt-2 text-xs leading-relaxed text-white/50">
               RapidAPI gives you <strong className="text-white/70">one account key</strong> — paste the same key in
@@ -241,7 +241,9 @@ export function ImportPanel({
           </div>
         </div>
 
-        <p className="mt-8 text-xs text-white/40">
+        <RapidApiDisclaimer className="mt-8" tone="dark" />
+
+        <p className="mt-4 text-xs text-white/40">
           Tip: after import, open Edit brochure to reorder photos or fill any stats the scraper missed.
         </p>
       </div>

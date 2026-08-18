@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Loader2, Sparkles } from 'lucide-react'
+import { ArrowLeft, BookOpen, Loader2, Sparkles } from 'lucide-react'
 import {
   createAccount,
   emptyProfileInput,
@@ -10,7 +10,15 @@ import {
 } from '../lib/agentAuth'
 import { AgentProfileForm } from './AgentProfileForm'
 
-export function AuthScreen({ onSignedIn }: { onSignedIn: (account: AgentAccount) => void }) {
+export function AuthScreen({
+  onSignedIn,
+  onPreview,
+  onHome,
+}: {
+  onSignedIn: (account: AgentAccount) => void
+  onPreview?: () => void
+  onHome?: () => void
+}) {
   const [mode, setMode] = useState<'signin' | 'create'>(() => (hasSavedAccounts() ? 'signin' : 'create'))
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -44,6 +52,28 @@ export function AuthScreen({ onSignedIn }: { onSignedIn: (account: AgentAccount)
       </div>
 
       <div className="relative z-10 mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-6 py-16">
+        <div className="mb-6 flex flex-wrap gap-2">
+          {onHome ? (
+            <button
+              type="button"
+              onClick={onHome}
+              className="inline-flex items-center gap-2 rounded-full border border-white/20 px-3 py-1.5 text-xs text-white/75 hover:bg-white/10"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Home
+            </button>
+          ) : null}
+          {onPreview ? (
+            <button
+              type="button"
+              onClick={onPreview}
+              className="inline-flex items-center gap-2 rounded-full border border-white/20 px-3 py-1.5 text-xs text-white/75 hover:bg-white/10"
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              View sample brochure
+            </button>
+          ) : null}
+        </div>
         <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-gold-soft">
           Listing Brochure Studio
         </p>

@@ -1,23 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { demoListing, type Listing } from './data/listing'
 import type { ListingSource } from './lib/listingImport'
-import { sourceLabel } from './lib/listingImport'
 import {
   applyAgentToListing,
+  isAdminAccount,
   loadSession,
   signOut,
   toAgent,
   type AgentAccount,
 } from './lib/agentAuth'
 import { ImportPanel } from './components/ImportPanel'
-import { HeroSection } from './components/HeroSection'
-import { PropertyStats } from './components/PropertyStats'
-import { ImageGallery } from './components/ImageGallery'
-import { NeighborhoodSection } from './components/NeighborhoodSection'
-import { MarketTrendsSection } from './components/MarketTrendsSection'
-import { FeatureGrid } from './components/FeatureGrid'
-import { LifestyleSection } from './components/LifestyleSection'
-import { AgentSection } from './components/AgentSection'
 import { Footer } from './components/Footer'
 import { Toolbar } from './components/Toolbar'
 import { PrintBrochure } from './components/PrintBrochure'
@@ -25,6 +17,12 @@ import { EditFactsPanel } from './components/EditFactsPanel'
 import { AuthScreen } from './components/AuthScreen'
 import { SectionNav } from './components/SectionNav'
 import { AgentProfilePanel } from './components/AgentProfilePanel'
+import { LandingPage } from './components/LandingPage'
+import { PreviewToolbar } from './components/PreviewToolbar'
+import { DebugBanners } from './components/DebugBanners'
+import { BrochurePages } from './components/BrochurePages'
+
+type GuestView = 'landing' | 'preview' | 'auth'
 
 function hasMissingStats(listing: Listing) {
   return listing.stats.some(
@@ -38,6 +36,7 @@ function needsEditAttention(listing: Listing, usedExamplePhotos: boolean) {
 
 export default function App() {
   const [account, setAccount] = useState<AgentAccount | null>(() => loadSession())
+  const [guestView, setGuestView] = useState<GuestView>('landing')
   const [profileOpen, setProfileOpen] = useState(false)
   const [dark, setDark] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -50,6 +49,7 @@ export default function App() {
   const [importNotice, setImportNotice] = useState('')
 
   const agent = account ? toAgent(account) : null
+  const isAdmin = isAdminAccount(account)
   const missing = useMemo(
     () => (listing ? needsEditAttention(listing, usedExamplePhotos) : false),
     [listing, usedExamplePhotos],
@@ -70,8 +70,19 @@ export default function App() {
     }
   }, [listing, agent])
 
+  useEffect(() => {
+    if (guestView === 'preview' && !account) {
+      const prev = document.title
+      document.title = `${demoListing.address} · Sample brochure`
+      return () => {
+        document.title = prev
+      }
+    }
+  }, [guestView, account])
+
   function handleSignedIn(next: AgentAccount) {
     setAccount(next)
+    setGuestView('landing')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -89,10 +100,51 @@ export default function App() {
     setProfileOpen(false)
     setUsedExamplePhotos(false)
     setImportNotice('')
+    setGuestView('landing')
   }
 
   if (!account || !agent) {
-    return <AuthScreen onSignedIn={handleSignedIn} />
+    if (guestView === 'preview') {
+      return (
+        <div className={dark ? 'bg-[#071421] text-[#f7f3ec]' : 'bg-paper text-ink'}>
+          <PreviewToolbar
+            dark={dark}
+            onToggleTheme={() => setDark((v) => !v)}
+            onSignIn={() => setGuestView('auth')}
+            onHome={() => setGuestView('landing')}
+          />
+          <div className="no-print border-b border-stone-light/30 bg-paper/90 px-4 py-2 text-center text-[11px] uppercase tracking-[0.2em] text-stone backdrop-blur dark:border-white/10 dark:bg-[#0c1f33]/90 dark:text-stone-light/70">
+            Sample brochure · {demoListing.neighborhood}, {demoListing.city}
+          </div>
+          <SectionNav />
+          <div className="screen-only pb-36">
+            <BrochurePages listing={demoListing} />
+            <Footer listing={demoListing} />
+          </div>
+          <PrintBrochure listing={demoListing} />
+        </div>
+      )
+    }
+
+    if (guestView === 'auth') {
+      return (
+        <AuthScreen
+          onSignedIn={handleSignedIn}
+          onPreview={() => setGuestView('preview')}
+          onHome={() => setGuestView('landing')}
+        />
+      )
+    }
+
+    return (
+      <LandingPage
+        onPreview={() => {
+          setGuestView('preview')
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        }}
+        onSignIn={() => setGuestView('auth')}
+      />
+    )
   }
 
   if (!listing) {
@@ -147,36 +199,20 @@ export default function App() {
         onSignOut={handleSignOut}
       />
 
-      <div className="no-print sticky top-0 z-40 space-y-0">
-        <div className="border-b border-stone-light/40 bg-warm/95 px-4 py-2 text-center text-xs uppercase tracking-[0.18em] text-stone backdrop-blur transition-colors dark:border-white/10 dark:bg-[#0c1f33]/95 dark:text-stone-light/75">
-          {source && source !== 'unknown'
-            ? `Generated from ${sourceLabel(source)} RapidAPI · ${agent.name} · ${agent.brokerage}${
-                missing ? ' · Review photos/stats in Edit brochure' : ''
-              }`
-            : `Demo brochure · ${agent.name} · ${agent.brokerage}`}
-        </div>
-        <div className="border-b border-amber-200/40 bg-amber-50 px-4 py-2 text-center text-xs leading-relaxed text-ink/80 transition-colors dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-50/90">
-          Import supports Compass, Zillow, and Redfin via separate RapidAPI keys.
-          {usedExamplePhotos
-            ? ' Example listing photos are showing because the API returned no photo URLs — replace them in Edit brochure.'
-            : ''}
-          {importNotice && !usedExamplePhotos ? ` ${importNotice}` : ''}
-        </div>
-      </div>
+      {isAdmin ? (
+        <DebugBanners
+          source={source}
+          agent={agent}
+          missing={missing}
+          usedExamplePhotos={usedExamplePhotos}
+          importNotice={importNotice}
+        />
+      ) : null}
 
       <SectionNav />
 
       <div className="screen-only pb-36">
-        <main>
-          <HeroSection listing={listing} />
-          <PropertyStats listing={listing} />
-          <ImageGallery listing={listing} />
-          <NeighborhoodSection listing={listing} />
-          <MarketTrendsSection listing={listing} />
-          <FeatureGrid listing={listing} />
-          <LifestyleSection listing={listing} />
-          <AgentSection listing={listing} />
-        </main>
+        <BrochurePages listing={listing} />
         <Footer listing={listing} />
       </div>
 
