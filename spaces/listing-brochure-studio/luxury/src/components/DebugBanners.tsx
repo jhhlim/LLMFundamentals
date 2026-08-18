@@ -7,14 +7,15 @@ export function DebugBanners({
   agent,
   missing,
   usedExamplePhotos,
-  importNotice,
 }: {
   source: ListingSource | null
   agent: Agent
   missing: boolean
   usedExamplePhotos: boolean
-  importNotice: string
+  importNotice?: string
 }) {
+  const showPhotoWarning = usedExamplePhotos
+
   return (
     <div className="no-print sticky top-0 z-40 space-y-0">
       <div className="border-b border-stone-light/40 bg-warm/95 px-4 py-2 text-center text-xs uppercase tracking-[0.18em] text-stone backdrop-blur transition-colors dark:border-white/10 dark:bg-[#0c1f33]/95 dark:text-stone-light/75">
@@ -24,13 +25,12 @@ export function DebugBanners({
             }`
           : `Demo brochure · ${agent.name} · ${agent.brokerage}`}
       </div>
-      <div className="border-b border-amber-200/40 bg-amber-50 px-4 py-2 text-center text-xs leading-relaxed text-ink/80 transition-colors dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-50/90">
-        Import supports Compass, Zillow, and Redfin via separate RapidAPI keys.
-        {usedExamplePhotos
-          ? ' Example listing photos are showing because the API returned no photo URLs — replace them in Edit brochure.'
-          : ''}
-        {importNotice && !usedExamplePhotos ? ` ${importNotice}` : ''}
-      </div>
+      {showPhotoWarning ? (
+        <div className="border-b border-amber-200/40 bg-amber-50 px-4 py-2 text-center text-xs leading-relaxed text-ink/80 transition-colors dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-50/90">
+          Example listing photos are showing because the API returned no photo URLs — replace them in Edit
+          brochure.
+        </div>
+      ) : null}
     </div>
   )
 }

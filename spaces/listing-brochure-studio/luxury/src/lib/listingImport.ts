@@ -1,6 +1,7 @@
 import { demoListing, type Agent, type FeatureCard, type Listing, type ListingImage, type NeighborhoodPlace } from '../data/listing'
 import { applyAgentToListing } from './agentAuth'
 import { buildMarketReport, compsFromPayload, emptyMarketReport } from './marketReport'
+import { SHOW_MARKET_TRENDS } from './featureFlags'
 import type { MarketComp, MarketReport } from '../data/listing'
 
 export type ListingSource = 'compass' | 'zillow' | 'redfin' | 'realtor' | 'mls' | 'unknown'
@@ -581,14 +582,23 @@ function unwrapCompassPayload(payload: Record<string, unknown>): Record<string, 
   }
   if (data.size && typeof data.size === 'object' && !Array.isArray(data.size)) {
     const size = data.size as Record<string, unknown>
+    const formattedLot = parseFormattedLotSize(size.formattedLotSize)
     data = {
       ...data,
       ...size,
       size,
       beds: data.beds ?? size.bedrooms ?? size.beds,
-      baths: data.baths ?? size.totalBathrooms ?? size.bathrooms ?? size.fullBathrooms,
-      sqft: data.sqft ?? size.squareFeet ?? size.livingArea,
-      lot_size_sqft: data.lot_size_sqft ?? size.lotSizeInSquareFeet ?? size.lotSize,
+      baths:
+        data.baths ??
+        size.totalBathrooms ??
+        size.bathrooms ??
+        size.fullBathrooms ??
+        (size.fullBathrooms != null && size.halfBathrooms != null
+          ? Number(size.fullBathrooms) + Number(size.halfBathrooms) * 0.5
+          : undefined),
+      sqft: data.sqft ?? size.squareFeet ?? size.livingArea ?? size.livingAreaSqFt,
+      lot_size_sqft:
+        data.lot_size_sqft ?? size.lotSizeInSquareFeet ?? size.lotSize ?? formattedLot,
       year_built: data.year_built ?? size.yearBuilt,
     }
   }
@@ -604,6 +614,7 @@ function unwrapCompassPayload(payload: Record<string, unknown>): Record<string, 
       state: data.state || loc.state,
       zip: data.zip || loc.zipCode || loc.zip,
       neighborhood: data.neighborhood || loc.neighborhood,
+      walk_score: data.walk_score ?? loc.walkScore ?? loc.walk_score,
     }
   }
   if (data.buildingInfo && typeof data.buildingInfo === 'object' && !Array.isArray(data.buildingInfo)) {
@@ -645,6 +656,107 @@ function unwrapCompassPayload(payload: Record<string, unknown>): Record<string, 
     }
   }
   return data
+}
+
+function parseFormattedLotSize(value: unknown): number | null {
+  const text = asString(value)
+  if (!text) return null
+  const sqft = text.match(/([\d,]+)\s*SF\b/i)
+  if (sqft) return toNumber(sqft[1])
+  const acres = text.match(/([\d.]+)\s*AC\b/i)
+  if (acres) {
+    const n = Number(acres[1])
+    return Number.isFinite(n) ? Math.round(n * 43560) : null
+  }
+  return null
+}
+
+function deepMergeCompassListing(
+  payload: unknown,
+  into: Record<string, unknown>,
+  depth = 0,
+  seen: WeakSet<object> = new WeakSet(),
+) {
+  if (depth > 12 || payload == null || typeof payload !== 'object') return
+  if (seen.has(payload as object)) return
+  seen.add(payload as object)
+
+  if (Array.isArray(payload)) {
+    for (const item of payload) deepMergeCompassListing(item, into, depth + 1, seen)
+    return
+  }
+
+  const obj = payload as Record<string, unknown>
+  const hasListingShape =
+    obj.size != null ||
+    obj.detailedInfo != null ||
+    obj.buildingInfo != null ||
+    obj.listingRelation != null ||
+    (obj.bedrooms != null && (obj.squareFeet != null || obj.totalBathrooms != null))
+
+  if (hasListingShape) {
+    Object.assign(into, mergeRecordFields(into, unwrapCompassPayload(obj)))
+  }
+
+  for (const value of Object.values(obj)) {
+    if (value && typeof value === 'object') deepMergeCompassListing(value, into, depth + 1, seen)
+  }
+}
+
+function applyCompassKeyDetails(data: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...data }
+  const rows: Array<{ key: string; value: string }> = []
+  for (const path of [
+    'detailedInfo.keyDetails',
+    'buildingInfo.buildingKeyDetails',
+    'keyDetails',
+    'regionalKeyDetails',
+  ]) {
+    const src = dig(out, [path])
+    if (!Array.isArray(src)) continue
+    for (const item of src) {
+      if (!item || typeof item !== 'object') continue
+      const row = item as Record<string, unknown>
+      const key = asString(row.key || row.label || row.name)
+      const value = asString(row.value || row.text || row.content)
+      if (key && value) rows.push({ key, value })
+    }
+  }
+
+  const facts = [...asList(out.key_facts)]
+  for (const { key, value } of rows) {
+    facts.push(`${key}: ${value}`)
+    const lower = key.toLowerCase()
+    if (/year built|built in|year opened/.test(lower)) {
+      const y = toNumber(value)
+      if (y != null && y >= 1800 && y <= 2035) out.year_built = out.year_built ?? Math.round(y)
+    }
+    if (/lot size|^lot$/.test(lower)) {
+      const fromText = parseFormattedLotSize(value)
+      if (fromText) out.lot_size_sqft = out.lot_size_sqft ?? fromText
+    }
+    if (/living area|square feet|sq\.?\s*ft|interior|finished sq/.test(lower)) {
+      out.sqft = out.sqft ?? toNumber(value)
+    }
+    if (/total bath|bathrooms|^baths$/.test(lower) && !/bed/.test(lower)) {
+      out.baths = out.baths ?? toNumber(value)
+    }
+    if (/walk score|walkability/.test(lower)) {
+      const w = toNumber(value)
+      if (w != null && w >= 0 && w <= 100) out.walk_score = out.walk_score ?? Math.round(w)
+    }
+  }
+  if (facts.length) out.key_facts = facts
+  return out
+}
+
+/** Deep-merge PullAPI / Compass SSR listing shapes (2175 Meadowgate Way and similar). */
+export function flattenCompassPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const merged: Record<string, unknown> = {}
+  deepMergeCompassListing(payload, merged)
+  let data = unwrapCompassPayload(mergeRecordFields(unwrapCompassPayload(payload), merged))
+  data = applyCompassKeyDetails(data)
+  return unwrapCompassPayload(data)
 }
 
 const BED_KEYS = new Set(['beds', 'bedrooms', 'beds_total', 'numbedrooms', 'bedroomstotal', 'bedroomcount'])
@@ -1637,6 +1749,7 @@ async function fetchCompassRaw(url: string, apiKey: string): Promise<Record<stri
     ],
     apiKey,
     'Compass',
+    flattenCompassPayload,
   )
 }
 
@@ -2154,9 +2267,6 @@ function buildImportNotice(listing: Listing, source: ListingSource, photoCount: 
     statBits.length > 0 ? ` · ${statBits.slice(0, 5).join(', ')} scraped` : ' · review stats in Edit brochure if any show —'
   let notice = `Loaded from ${sourceLabel(source)} via RapidAPI · ${photoCount} photo${photoCount === 1 ? '' : 's'}${statsSummary}.`
   if (listing.walkScore > 0) notice += ` Walk Score ${listing.walkScore}.`
-  if (listing.market.comps.length) {
-    notice += ` · ${listing.market.comps.length} nearby comps (${listing.market.soldCount} sold / ${listing.market.listedCount} listed).`
-  }
   return notice
 }
 
@@ -2211,7 +2321,9 @@ export async function importListingFromUrl(
   try {
     listing = {
       ...listing,
-      market: await fetchMarketReport(listing, portalKeys, trimmed, source, rawPortal, apiKey),
+      market: SHOW_MARKET_TRENDS
+        ? await fetchMarketReport(listing, portalKeys, trimmed, source, rawPortal, apiKey)
+        : emptyMarketReport([listing.neighborhood, listing.city, listing.zip].filter(Boolean).join(' · ')),
     }
   } catch {
     listing = { ...listing, market: emptyMarketReport([listing.neighborhood, listing.city, listing.zip].filter(Boolean).join(' · ')) }
@@ -2226,9 +2338,6 @@ export async function importListingFromUrl(
       images: EXAMPLE_LISTING_PHOTOS.map((img) => ({ ...img })),
     })
     notice = `${sourceLabel(source)} facts loaded, but RapidAPI returned no photo URLs. Example photos were added — replace them in Edit brochure.`
-    if (listing.market.comps.length) {
-      notice += ` Nearby comps: ${listing.market.comps.length}.`
-    }
   }
 
   if (agent) listing = applyAgentToListing(listing, agent)

@@ -46,7 +46,6 @@ export default function App() {
   const [source, setSource] = useState<ListingSource | null>(null)
   const [editOpen, setEditOpen] = useState(false)
   const [usedExamplePhotos, setUsedExamplePhotos] = useState(false)
-  const [importNotice, setImportNotice] = useState('')
 
   const agent = account ? toAgent(account) : null
   const isAdmin = isAdminAccount(account)
@@ -99,7 +98,6 @@ export default function App() {
     setEditOpen(false)
     setProfileOpen(false)
     setUsedExamplePhotos(false)
-    setImportNotice('')
     setGuestView('landing')
   }
 
@@ -158,7 +156,6 @@ export default function App() {
             setListing(applyAgentToListing(next, agent))
             setSource(detected)
             setUsedExamplePhotos(Boolean(meta?.usedExamplePhotos))
-            setImportNotice(meta?.notice || '')
             setEditOpen(needsEditAttention(next, Boolean(meta?.usedExamplePhotos)))
             window.scrollTo({ top: 0, behavior: 'smooth' })
           }}
@@ -166,7 +163,6 @@ export default function App() {
             setListing(applyAgentToListing(demoListing, agent))
             setSource('unknown')
             setUsedExamplePhotos(false)
-            setImportNotice('')
             setEditOpen(false)
             window.scrollTo({ top: 0, behavior: 'smooth' })
           }}
@@ -192,7 +188,6 @@ export default function App() {
           setSource(null)
           setEditOpen(false)
           setUsedExamplePhotos(false)
-          setImportNotice('')
         }}
         onEditFacts={() => setEditOpen(true)}
         onEditProfile={() => setProfileOpen(true)}
@@ -205,7 +200,6 @@ export default function App() {
           agent={agent}
           missing={missing}
           usedExamplePhotos={usedExamplePhotos}
-          importNotice={importNotice}
         />
       ) : null}
 
