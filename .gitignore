@@ -1,17 +1,10 @@
-<<<<<<< HEAD
+.ipynb_checkpoints/
 .venv/
 __pycache__/
 *.py[cod]
 .DS_Store
 *.pdf
 .python-version
-luxury/node_modules/
-luxury/dist/
-<<<<<<< HEAD
-=======
-.ipynb_checkpoints/
-__pycache__/
-.venv/
 model/
 mlm/
 ner_model/
@@ -21,8 +14,7 @@ logs/
 *.safetensors
 checkpoint-*/
 artifacts/hw6*
->>>>>>> e99d90b41925b5196756a771fa9951f1b6b2ae14
-=======
+luxury/node_modules/
+luxury/dist/
 spaces/listing-brochure-studio/luxury/node_modules/
 spaces/listing-brochure-studio/luxury/dist/
->>>>>>> cursor/listing-brochure-studio-c2b5

@@ -1,11 +1,13 @@
 import { QRCodeSVG } from 'qrcode.react'
 import type { Listing } from '../data/listing'
+import { displayWebsite } from '../lib/agentAuth'
+import { SHOW_MARKET_TRENDS } from '../lib/featureFlags'
 
 /** Print-only Letter brochure — separate from the interactive scroll layout. */
 export function PrintBrochure({ listing }: { listing: Listing }) {
   const photos = listing.images
   const hero = photos[0]?.src
-  const gallery = photos.slice(1, 5)
+  const gallery = photos.slice(1, 9)
 
   return (
     <div className="print-root hidden print:block">
@@ -35,7 +37,7 @@ export function PrintBrochure({ listing }: { listing: Listing }) {
           </div>
           <div className="print-cover-bottom">
             <div className="print-stat-row">
-              {listing.stats.slice(0, 5).map((s) => (
+              {listing.stats.slice(0, 6).map((s) => (
                 <div key={s.label}>
                   <p className="print-kicker">{s.label}</p>
                   <p className="print-stat-value">{s.value}</p>
@@ -97,7 +99,7 @@ export function PrintBrochure({ listing }: { listing: Listing }) {
             <p className="print-body">{listing.neighborhoodIntro}</p>
             <div className="print-walk">
               <p className="print-kicker">Walk Score</p>
-              <p className="print-stat-value">{listing.walkScore}</p>
+              <p className="print-stat-value">{listing.walkScore > 0 ? listing.walkScore : '—'}</p>
             </div>
           </div>
           <div className="print-place-grid">
@@ -123,7 +125,51 @@ export function PrintBrochure({ listing }: { listing: Listing }) {
         </div>
       </section>
 
-      {/* PAGE 5 — Lifestyle + CTA */}
+      {/* PAGE 5 — Market comps (admin / feature flag) */}
+      {SHOW_MARKET_TRENDS ? (
+      <section className="print-page print-light">
+        <p className="print-kicker">Market trends</p>
+        <h2>Similar homes nearby</h2>
+        <p className="print-about">{listing.market.summary}</p>
+        <div className="print-cards">
+          <div className="print-card">
+            <p className="print-kicker">Median sold</p>
+            <p className="print-stat-value dark">{listing.market.medianSold}</p>
+          </div>
+          <div className="print-card">
+            <p className="print-kicker">Median list</p>
+            <p className="print-stat-value dark">{listing.market.medianList}</p>
+          </div>
+          <div className="print-card">
+            <p className="print-kicker">Avg. $/SF</p>
+            <p className="print-stat-value dark">{listing.market.avgPpsf}</p>
+          </div>
+          <div className="print-card">
+            <p className="print-kicker">Comps</p>
+            <p className="print-stat-value dark">{listing.market.comps.length || '—'}</p>
+          </div>
+        </div>
+        <div className="print-comp-grid">
+          {listing.market.comps.slice(0, 8).map((comp) => (
+            <div key={`${comp.address}-${comp.price}`} className="print-comp">
+              <p className="print-kicker">{comp.status}</p>
+              <strong>{comp.address}</strong>
+              <p>
+                {comp.price} · {comp.beds} bd · {comp.baths} ba · {comp.sqft}
+              </p>
+              <p>
+                {comp.pricePerSqft} · {comp.dateLabel}
+              </p>
+            </div>
+          ))}
+        </div>
+        <p className="print-comp-note">
+          Public portal comps{listing.market.sourceLabel ? ` · ${listing.market.sourceLabel}` : ''}. Not an appraisal.
+        </p>
+      </section>
+      ) : null}
+
+      {/* Lifestyle + CTA */}
       <section className="print-page print-light">
         <p className="print-kicker">Lifestyle</p>
         <h2>How the days feel here</h2>
@@ -147,7 +193,7 @@ export function PrintBrochure({ listing }: { listing: Listing }) {
               {listing.agent.phone} · {listing.agent.email}
             </p>
             <p>
-              {listing.agent.dre} · jasonlimrealty.com
+              {[listing.agent.dre, displayWebsite(listing.agent.website)].filter(Boolean).join(' · ')}
             </p>
           </div>
           <div className="print-qr light">

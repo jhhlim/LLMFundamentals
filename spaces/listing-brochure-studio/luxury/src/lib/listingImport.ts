@@ -1,27 +1,47 @@
-import { demoListing, type FeatureCard, type Listing, type ListingImage, type NeighborhoodPlace } from '../data/listing'
+import { demoListing, type Agent, type FeatureCard, type Listing, type ListingImage, type NeighborhoodPlace } from '../data/listing'
+import { applyAgentToListing } from './agentAuth'
+import { buildMarketReport, compsFromPayload, emptyMarketReport } from './marketReport'
+import { SHOW_MARKET_TRENDS } from './featureFlags'
+import type { MarketComp, MarketReport } from '../data/listing'
 
 export type ListingSource = 'compass' | 'zillow' | 'redfin' | 'realtor' | 'mls' | 'unknown'
-
-const BRAND_AGENT = demoListing.agent
 
 const HOSTS = {
   compass: 'compass-com-real-estate-data-api.p.rapidapi.com',
   zillow: 'zillow-scraper-api.p.rapidapi.com',
+  zillowCom1: 'zillow-com1.p.rapidapi.com',
   zillowAlt: 'real-time-real-estate-data.p.rapidapi.com',
+  zillowRt: 'real-time-zillow-data.p.rapidapi.com',
   zillow56: 'zillow56.p.rapidapi.com',
+  zillowWorking: 'zillow-working-api.p.rapidapi.com',
+  zillowWorking2: 'zllw-working-api.p.rapidapi.com',
+  zillowUs: 'us-property-data.p.rapidapi.com',
   redfin: 'redfin-com-data-api.p.rapidapi.com',
   redfinAlt: 'real-time-redfin-data.p.rapidapi.com',
+  zillowMarket: 'us-housing-market-data1.p.rapidapi.com',
 } as const
 
 /** Human-readable RapidAPI product names for subscribe hints. */
 const RAPIDAPI_PRODUCT: Record<string, string> = {
   [HOSTS.compass]: 'Compass.com Real Estate Data API',
   [HOSTS.zillow]: 'Zillow Scraper API',
+  [HOSTS.zillowCom1]: 'Zillow (zillow-com1)',
   [HOSTS.zillowAlt]: 'Real-Time Real-Estate Data',
+  [HOSTS.zillowRt]: 'Real-Time Zillow Data',
   [HOSTS.zillow56]: 'Zillow56',
+  [HOSTS.zillowWorking]: 'Zillow Working API',
+  [HOSTS.zillowWorking2]: 'ZLLW Working API',
+  [HOSTS.zillowUs]: 'US Property Data',
   [HOSTS.redfin]: 'Redfin.com Data API',
   [HOSTS.redfinAlt]: 'Real-Time Redfin Data',
+  [HOSTS.zillowMarket]: 'US Housing Market Data (Zillow)',
 }
+
+const ZILLOW_SUBSCRIBE_HELP =
+  'A RapidAPI key is not enough — subscribe to one Zillow product, then retry with the same key: ' +
+  'https://rapidapi.com/apimaker/api/zillow-com1 (recommended) · ' +
+  'https://rapidapi.com/s.mahmoud97/api/zillow56 · ' +
+  'https://rapidapi.com/letscrape-6bRBa3QguO5/api/real-time-zillow-data'
 
 class PortalFetchError extends Error {
   skippable: boolean
@@ -107,6 +127,12 @@ function money(value: unknown): string {
   return `$${Math.round(n).toLocaleString()}`
 }
 
+function num(value: unknown): number | null {
+  if (value == null || value === '') return null
+  const n = Number(String(value).replace(/[^\d.]/g, ''))
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
 function asString(value: unknown, fallback = ''): string {
   if (value == null) return fallback
   return String(value)
@@ -164,6 +190,19 @@ function dig(data: Record<string, unknown>, paths: string[]): unknown {
 function toNumber(value: unknown): number | null {
   if (value == null || value === '') return null
   if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>
+    return toNumber(
+      obj.total ??
+        obj.totalBathrooms ??
+        obj.value ??
+        obj.raw ??
+        obj.count ??
+        obj.amount ??
+        obj.squareFeet ??
+        obj.formatted,
+    )
+  }
   const cleaned = String(value).replace(/,/g, '').match(/(\d+(\.\d+)?)/)
   if (!cleaned) return null
   const n = Number(cleaned[1])
@@ -178,11 +217,352 @@ function pickNumber(data: Record<string, unknown>, paths: string[]): number | nu
   return null
 }
 
-/** Merge nested Compass payload shapes into one lookup object (PullAPI + alternate scrapers). */
+function mergeRecordFields(
+  base: Record<string, unknown>,
+  extra: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...base }
+  for (const [key, value] of Object.entries(extra)) {
+    if (value == null || value === '') continue
+    const existing = merged[key]
+    if (key === 'photos' || key === 'image_urls') {
+      const combined = [
+        ...flattenPhotoUrls(existing),
+        ...flattenPhotoUrls(value),
+      ]
+      if (combined.length) merged[key] = [...new Set(combined)]
+      continue
+    }
+    if (existing == null || existing === '' || existing === 0) {
+      merged[key] = value
+    }
+  }
+  return merged
+}
+
+function flattenPhotoUrls(value: unknown): string[] {
+  if (!value) return []
+  if (typeof value === 'string') return looksLikeListingPhoto(value) ? [upgradeRedfinPhotoUrl(value)] : []
+  if (!Array.isArray(value)) return []
+  const urls: string[] = []
+  for (const item of value) {
+    if (typeof item === 'string') {
+      if (looksLikeListingPhoto(item)) urls.push(upgradeRedfinPhotoUrl(item))
+      continue
+    }
+    if (item && typeof item === 'object') {
+      const obj = item as Record<string, unknown>
+      const pu = obj.photoUrls && typeof obj.photoUrls === 'object' ? (obj.photoUrls as Record<string, unknown>) : {}
+      for (const candidate of [
+        obj.fullScreenPhotoUrl,
+        obj.fullscreenPhotoUrl,
+        obj.lightboxPhotoUrl,
+        obj.largePhotoUrl,
+        obj.url,
+        obj.href,
+        obj.src,
+        pu.fullScreenPhotoUrl,
+        pu.fullscreenPhotoUrl,
+        pu.lightboxPhotoUrl,
+        pu.largePhotoUrl,
+      ]) {
+        if (typeof candidate === 'string' && looksLikeListingPhoto(candidate)) {
+          urls.push(upgradeRedfinPhotoUrl(candidate))
+        }
+      }
+    }
+  }
+  return urls
+}
+
+function looksLikeListingPhoto(value: string): boolean {
+  const v = value.trim()
+  if (!looksLikeImageUrl(v)) return false
+  if (/logo|sprite|icon|favicon|placeholder|pixel|1x1|tracking|badge|avatar/i.test(v)) return false
+  if (/cdn-redfin\.com\/v\d/i.test(v)) return false
+  if (/cdn-redfin\.com/i.test(v) && !/\/photo\//i.test(v)) return false
+  return true
+}
+
+function upgradeRedfinPhotoUrl(url: string): string {
+  return url
+    .replace(/^\/\//, 'https://')
+    .replace('/islphoto/', '/bigphoto/')
+    .replace('/mbpaddedwide/', '/bigphoto/')
+    .replace('/tinyphoto/', '/bigphoto/')
+    .replace(/genIslnoResize\./g, '')
+    .replace(/genMid\./g, '')
+}
+
+function pickPhotoCount(data: Record<string, unknown>): number {
+  return (
+    pickNumber(data, [
+      'photoCount',
+      'numPhotos',
+      'photosCount',
+      'mediaBrowserInfo.photoCount',
+      'photos.photoCount',
+      'photosInfo.photoCount',
+      'previewPhotosCount',
+    ]) || 0
+  )
+}
+
+function expandRedfinPhotoSequence(urls: string[], photoCount: number): string[] {
+  if (!urls.length) return urls
+  const template = urls.find((u) => /cdn-redfin\.com\/photo\/.*[_-]\d+\.[a-z]+(\?|$)/i.test(u))
+  if (!template) return urls
+
+  const match = template.match(/^(.*)[_-](\d+)(\.[a-z]+)(\?.*)?$/i)
+  if (!match) return urls
+  const [, prefix, , ext, query = ''] = match
+  const target = Math.min(Math.max(photoCount || 36, urls.length), 60)
+  if (target <= urls.length && photoCount > 0) return urls
+
+  const expanded = [...urls]
+  for (let i = 0; i < target; i++) {
+    expanded.push(`${prefix}_${i}${ext}${query}`)
+  }
+  return [...new Set(expanded)]
+}
+
+function probeReachablePhotos(urls: string[]): Promise<string[]> {
+  if (typeof Image === 'undefined') return Promise.resolve(urls)
+  return Promise.all(
+    urls.map(
+      (src) =>
+        new Promise<string | null>((resolve) => {
+          const img = new Image()
+          const done = (ok: boolean) => resolve(ok ? src : null)
+          img.onload = () => done(true)
+          img.onerror = () => done(false)
+          setTimeout(() => done(false), 3500)
+          img.src = src
+        }),
+    ),
+  ).then((rows) => rows.filter((src): src is string => Boolean(src)))
+}
+
+function titleCaseWords(slug: string): string {
+  return slug
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+/** Parse city, state, zip, street from Redfin URL path when API omits them. */
+function parseRedfinUrlMeta(url: string): Record<string, unknown> {
+  const m = url.match(/redfin\.(?:com|ca)\/([A-Z]{2})\/([^/]+)\/([^/]+)\/home\/(\d+)/i)
+  if (!m) return {}
+  const [, state, citySlug, addressSlug, propertyId] = m
+  const zipMatch = addressSlug.match(/-(\d{5})(?:-\d{4})?$/i)
+  const zip = zipMatch?.[1] || ''
+  const streetSlug = addressSlug.replace(/-(\d{5})(?:-\d{4})?$/i, '')
+  const street = titleCaseWords(streetSlug)
+  return {
+    state: state.toUpperCase(),
+    city: titleCaseWords(citySlug),
+    zip,
+    street_address: street,
+    neighborhood: titleCaseWords(citySlug),
+    propertyId: Number(propertyId),
+    property_id: propertyId,
+  }
+}
+
+function extractRedfinMediaPhotos(data: Record<string, unknown>): Record<string, unknown> {
+  const urls = [
+    ...flattenPhotoUrls(data.photos),
+    ...flattenPhotoUrls(data.images),
+    ...flattenPhotoUrls(data.image_urls),
+    ...flattenPhotoUrls(dig(data, ['mediaBrowserInfo.photos'])),
+    ...flattenPhotoUrls(dig(data, ['payload.mediaBrowserInfo.photos'])),
+    ...flattenPhotoUrls(dig(data, ['photosInfo.photos'])),
+    ...flattenPhotoUrls(dig(data, ['photoList'])),
+    ...flattenPhotoUrls(dig(data, ['extraPhotos'])),
+    ...extractPhotoUrls(data, 80),
+  ].filter((u) => looksLikeListingPhoto(u)).map(upgradeRedfinPhotoUrl)
+
+  const unique = expandRedfinPhotoSequence([...new Set(urls)], pickPhotoCount(data))
+  return unique.length ? { photos: unique, image_urls: unique } : {}
+}
+
+function parseRedfinInfoPanel(data: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  const panel = data.mainHouseInfoPanelInfo || data.mainHouseInfoPanel
+  if (!Array.isArray(panel)) return out
+
+  const facts: string[] = []
+  for (const item of panel) {
+    if (!item || typeof item !== 'object') continue
+    const row = item as Record<string, unknown>
+    const label = asString(row.desc || row.label || row.name || row.title)
+    const value = asString(row.feature || row.value || row.text || row.content)
+    if (label && value) facts.push(`${label}: ${value}`)
+
+    const lower = label.toLowerCase()
+    if (/bed/i.test(lower)) out.beds = toNumber(value) ?? out.beds
+    if (/bath/i.test(lower)) out.baths = toNumber(value) ?? out.baths
+    if (/sq\.?\s*ft|square feet|living area/i.test(lower)) out.sqft = toNumber(value) ?? out.sqft
+    if (/lot/i.test(lower)) out.lot_size = toNumber(value) ?? out.lot_size
+    if (/year built|built in/i.test(lower)) out.yearBuilt = toNumber(value) ?? out.yearBuilt
+    if (/garage|parking/i.test(lower) && !out.garage) out.garage = value
+  }
+  if (facts.length) out.key_facts = facts
+  return out
+}
+
+/** Flatten schema.org / JSON-LD property objects from Redfin.Com Data API. */
+function normalizeRedfinProperty(prop: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...prop }
+
+  const addr = prop.address
+  if (addr && typeof addr === 'object' && !Array.isArray(addr)) {
+    const a = addr as Record<string, unknown>
+    const street = asString(a.streetAddress || a.street)
+    const city = asString(a.addressLocality || a.city)
+    const state = asString(a.addressRegion || a.state)
+    const zip = asString(a.postalCode || a.zip || a.zipcode)
+    if (street) out.street_address = street
+    if (city) out.city = city
+    if (state) out.state = state
+    if (zip) out.zip = zip
+    out.address = { streetAddress: street, city, state, zipcode: zip, ...a }
+  }
+
+  if (typeof prop.image === 'string') {
+    out.photos = [prop.image]
+    out.image_urls = [prop.image]
+  }
+  if (Array.isArray(prop.images)) {
+    out.photos = prop.images
+    out.image_urls = prop.images
+  }
+
+  if (prop.numberOfBedrooms != null) out.beds = prop.numberOfBedrooms
+  if (prop.numberOfBathroomsTotal != null) out.baths = prop.numberOfBathroomsTotal
+  if (prop.numberOfRooms != null && out.beds == null) out.beds = prop.numberOfRooms
+
+  const floorSize = prop.floorSize
+  if (floorSize && typeof floorSize === 'object' && !Array.isArray(floorSize)) {
+    const fs = floorSize as Record<string, unknown>
+    if (fs.value != null) out.sqft = fs.value
+  }
+
+  if (prop.yearBuilt != null) out.yearBuilt = prop.yearBuilt
+  if (prop.name && !out.street_address) out.street_address = prop.name
+  if (typeof prop.listing_url === 'string') out.listing_url = prop.listing_url
+
+  return out
+}
+
+/** Unwrap Redfin.Com Data API + Real-Time Redfin Data response shapes. */
+function unwrapRedfinPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  let data: Record<string, unknown> = { ...payload }
+
+  if (data.resultCode != null && data.payload && typeof data.payload === 'object' && !Array.isArray(data.payload)) {
+    data = mergeRecordFields(data, unwrapRedfinPayload(data.payload as Record<string, unknown>))
+  }
+
+  data = unwrapCompassPayload(data)
+
+  if (Array.isArray(data.properties) && data.properties.length) {
+    for (const item of data.properties) {
+      if (item && typeof item === 'object') {
+        data = mergeRecordFields(data, normalizeRedfinProperty(item as Record<string, unknown>))
+      }
+    }
+  }
+
+  const addressInfo = data.addressInfo
+  if (addressInfo && typeof addressInfo === 'object' && !Array.isArray(addressInfo)) {
+    const ai = addressInfo as Record<string, unknown>
+    data = mergeRecordFields(data, {
+      street_address: ai.streetAddress,
+      city: ai.city,
+      state: ai.state,
+      zip: ai.zip || ai.zipcode || ai.postalCode,
+      address: ai,
+    })
+  }
+
+  data = mergeRecordFields(data, extractRedfinMediaPhotos(data))
+  data = mergeRecordFields(data, parseRedfinInfoPanel(data))
+
+  for (const nestKey of [
+    'homeData',
+    'aboveTheFold',
+    'belowTheFold',
+    'mainHouseInfo',
+    'propertyInfo',
+    'mediaBrowserInfo',
+    'amenitiesInfo',
+    'publicRecordsInfo',
+    'schoolsInfo',
+    'walkScoreData',
+    'walkAndBikeScore',
+    'walkAndTransitScore',
+    'walkScoreInfo',
+    'photosInfo',
+  ]) {
+    const nested = data[nestKey]
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      data = mergeRecordFields(data, unwrapRedfinPayload(nested as Record<string, unknown>))
+    }
+  }
+
+  const payloadData = payload.payload
+  if (payloadData && typeof payloadData === 'object' && !Array.isArray(payloadData) && payloadData !== data) {
+    data = mergeRecordFields(data, unwrapRedfinPayload(payloadData as Record<string, unknown>))
+  }
+
+  return data
+}
+
+function redfinPayloadHasData(data: Record<string, unknown>): boolean {
+  const address = dig(data, [
+    'street_address',
+    'address',
+    'address.streetAddress',
+    'name',
+    'streetAddress',
+  ])
+  const price = dig(data, ['price', 'listPrice', 'list_price', 'priceInfo.price'])
+  const beds = dig(data, ['beds', 'bedrooms', 'bedroomsTotal'])
+  const photos = extractListingPhotos(data)
+  return !!(address || price || beds || photos.length)
+}
+
+function extractRedfinIds(data: Record<string, unknown>): { propertyId: string; listingId: string } {
+  return {
+    propertyId: asString(
+      dig(data, ['propertyId', 'property_id', 'homeData.propertyId', 'identifiers.propertyId']),
+    ),
+    listingId: asString(
+      dig(data, ['listingId', 'listing_id', 'homeData.listingId', 'identifiers.listingId']),
+    ),
+  }
+}
+
+function redfinPathFromUrl(url: string): string {
+  const path = url.replace(/^https?:\/\/(?:www\.)?redfin\.(?:com|ca)/i, '')
+  return path.startsWith('/') ? path : `/${path}`
+}
+
+/** Merge nested Compass payload shapes into one lookup object (PullAPI + Compass SSR listing). */
 function unwrapCompassPayload(payload: Record<string, unknown>): Record<string, unknown> {
   let data: Record<string, unknown> = payload
   if (data.data && typeof data.data === 'object' && !Array.isArray(data.data)) {
     data = data.data as Record<string, unknown>
+  }
+  if (data.props && typeof data.props === 'object' && !Array.isArray(data.props)) {
+    data = { ...data, ...(data.props as Record<string, unknown>) }
+  }
+  const listingRelation = data.listingRelation
+  if (listingRelation && typeof listingRelation === 'object' && !Array.isArray(listingRelation)) {
+    const rel = listingRelation as Record<string, unknown>
+    if (rel.listing && typeof rel.listing === 'object' && !Array.isArray(rel.listing)) {
+      data = { ...data, ...(rel.listing as Record<string, unknown>) }
+    }
   }
   if (data.property && typeof data.property === 'object' && !Array.isArray(data.property)) {
     const nested = data.property as Record<string, unknown>
@@ -198,26 +578,230 @@ function unwrapCompassPayload(payload: Record<string, unknown>): Record<string, 
   }
   if (data.building && typeof data.building === 'object' && !Array.isArray(data.building)) {
     const building = data.building as Record<string, unknown>
-    data = { ...data, ...building, building }
+    data = {
+      ...data,
+      ...building,
+      building,
+      year_built: data.year_built ?? building.year_built ?? building.yearBuilt,
+    }
   }
   if (data.size && typeof data.size === 'object' && !Array.isArray(data.size)) {
     const size = data.size as Record<string, unknown>
-    data = { ...data, ...size, size }
+    const formattedLot = parseFormattedLotSize(size.formattedLotSize)
+    data = {
+      ...data,
+      ...size,
+      size,
+      beds: data.beds ?? size.bedrooms ?? size.beds,
+      baths:
+        data.baths ??
+        size.totalBathrooms ??
+        size.bathrooms ??
+        size.fullBathrooms ??
+        (size.fullBathrooms != null && size.halfBathrooms != null
+          ? Number(size.fullBathrooms) + Number(size.halfBathrooms) * 0.5
+          : undefined),
+      sqft: data.sqft ?? size.squareFeet ?? size.livingArea ?? size.livingAreaSqFt,
+      lot_size_sqft:
+        data.lot_size_sqft ?? size.lotSizeInSquareFeet ?? size.lotSize ?? formattedLot,
+      year_built: data.year_built ?? size.yearBuilt,
+    }
+  }
+  if (data.location && typeof data.location === 'object' && !Array.isArray(data.location)) {
+    const loc = data.location as Record<string, unknown>
+    const existingCity = asString(data.city)
+    const neighborhood = asString(loc.neighborhood)
+    data = {
+      ...data,
+      location: loc,
+      street_address: data.street_address || loc.prettyAddress || loc.streetAddress,
+      city: existingCity && existingCity !== neighborhood ? data.city : loc.city || data.city,
+      state: data.state || loc.state,
+      zip: data.zip || loc.zipCode || loc.zip,
+      neighborhood: data.neighborhood || loc.neighborhood,
+      walk_score: data.walk_score ?? loc.walkScore ?? loc.walk_score,
+    }
+  }
+  if (data.buildingInfo && typeof data.buildingInfo === 'object' && !Array.isArray(data.buildingInfo)) {
+    const info = data.buildingInfo as Record<string, unknown>
+    data = {
+      ...data,
+      year_built: data.year_built || info.buildingYearOpened || info.yearBuilt,
+      buildingInfo: info,
+    }
+  }
+  if (data.detailedInfo && typeof data.detailedInfo === 'object' && !Array.isArray(data.detailedInfo)) {
+    const details = data.detailedInfo as Record<string, unknown>
+    data = {
+      ...data,
+      ...details,
+      detailedInfo: details,
+      garageSpaces: data.garageSpaces ?? details.garageSpaces ?? details.totalParkingSpaces,
+    }
+  }
+  if (data.price && typeof data.price === 'object' && !Array.isArray(data.price)) {
+    const priceObj = data.price as Record<string, unknown>
+    data = {
+      ...data,
+      price: priceObj.formatted || priceObj.lastKnown || priceObj.listed || priceObj.listPrice || data.price,
+      list_price: priceObj.lastKnown || priceObj.listed,
+    }
+  }
+  const media = data.media
+  if (Array.isArray(media) && media.length) {
+    const urls = media
+      .map((item) => {
+        if (!item || typeof item !== 'object') return ''
+        const obj = item as Record<string, unknown>
+        return asString(obj.originalUrl || obj.originUrl || obj.url || obj.thumbnailUrl)
+      })
+      .filter(Boolean)
+    if (urls.length) {
+      data = { ...data, photos: [...flattenPhotoUrls(data.photos), ...urls], image_urls: urls }
+    }
   }
   return data
 }
 
+function parseFormattedLotSize(value: unknown): number | null {
+  const text = asString(value)
+  if (!text) return null
+  const sqft = text.match(/([\d,]+)\s*SF\b/i)
+  if (sqft) return toNumber(sqft[1])
+  const acres = text.match(/([\d.]+)\s*AC\b/i)
+  if (acres) {
+    const n = Number(acres[1])
+    return Number.isFinite(n) ? Math.round(n * 43560) : null
+  }
+  return null
+}
+
+function deepMergeCompassListing(
+  payload: unknown,
+  into: Record<string, unknown>,
+  depth = 0,
+  seen: WeakSet<object> = new WeakSet(),
+) {
+  if (depth > 12 || payload == null || typeof payload !== 'object') return
+  if (seen.has(payload as object)) return
+  seen.add(payload as object)
+
+  if (Array.isArray(payload)) {
+    for (const item of payload) deepMergeCompassListing(item, into, depth + 1, seen)
+    return
+  }
+
+  const obj = payload as Record<string, unknown>
+  const hasListingShape =
+    obj.size != null ||
+    obj.detailedInfo != null ||
+    obj.buildingInfo != null ||
+    obj.listingRelation != null ||
+    obj.listing != null ||
+    obj.beds != null ||
+    obj.baths != null ||
+    obj.bathrooms != null ||
+    obj.sqft != null ||
+    (obj.bedrooms != null && (obj.squareFeet != null || obj.totalBathrooms != null))
+
+  if (hasListingShape) {
+    Object.assign(into, mergeRecordFields(into, unwrapCompassPayload(obj)))
+  }
+
+  for (const key of ['listingRelation', 'listing', 'property', 'data']) {
+    const nested = obj[key]
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      const node = nested as Record<string, unknown>
+      if (key === 'listingRelation' && node.listing) {
+        deepMergeCompassListing(node.listing, into, depth + 1, seen)
+      }
+      deepMergeCompassListing(node, into, depth + 1, seen)
+    }
+  }
+
+  for (const value of Object.values(obj)) {
+    if (value && typeof value === 'object') deepMergeCompassListing(value, into, depth + 1, seen)
+  }
+}
+
+function applyCompassKeyDetails(data: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...data }
+  const rows: Array<{ key: string; value: string }> = []
+  for (const path of [
+    'detailedInfo.keyDetails',
+    'buildingInfo.buildingKeyDetails',
+    'keyDetails',
+    'regionalKeyDetails',
+  ]) {
+    const src = dig(out, [path])
+    if (!Array.isArray(src)) continue
+    for (const item of src) {
+      if (!item || typeof item !== 'object') continue
+      const row = item as Record<string, unknown>
+      const key = asString(row.key || row.label || row.name)
+      const value = asString(row.value || row.text || row.content)
+      if (key && value) rows.push({ key, value })
+    }
+  }
+
+  const facts = [...asList(out.key_facts)]
+  for (const { key, value } of rows) {
+    facts.push(`${key}: ${value}`)
+    const lower = key.toLowerCase()
+    if (/year built|built in|year opened/.test(lower)) {
+      const y = toNumber(value)
+      if (y != null && y >= 1800 && y <= 2035) out.year_built = out.year_built ?? Math.round(y)
+    }
+    if (/lot size|^lot$/.test(lower)) {
+      const fromText = parseFormattedLotSize(value)
+      if (fromText) out.lot_size_sqft = out.lot_size_sqft ?? fromText
+    }
+    if (/living area|square feet|sq\.?\s*ft|interior|finished sq/.test(lower)) {
+      out.sqft = out.sqft ?? toNumber(value)
+    }
+    if (/total bath|bathrooms|^baths$/.test(lower) && !/bed/.test(lower)) {
+      out.baths = out.baths ?? toNumber(value)
+    }
+    if (/walk score|walkability/.test(lower)) {
+      const w = toNumber(value)
+      if (w != null && w >= 0 && w <= 100) out.walk_score = out.walk_score ?? Math.round(w)
+    }
+  }
+  if (facts.length) out.key_facts = facts
+  return out
+}
+
+/** Deep-merge PullAPI / Compass SSR listing shapes (2175 Meadowgate Way and similar). */
+export function flattenCompassPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const merged: Record<string, unknown> = {}
+  deepMergeCompassListing(payload, merged)
+  let data = unwrapCompassPayload(mergeRecordFields(unwrapCompassPayload(payload), merged))
+  data = applyCompassKeyDetails(data)
+  return unwrapCompassPayload(data)
+}
+
 const BED_KEYS = new Set(['beds', 'bedrooms', 'beds_total', 'numbedrooms', 'bedroomstotal', 'bedroomcount'])
-const BATH_KEYS = new Set(['baths', 'bathrooms', 'baths_total', 'numbathrooms', 'bathroomstotal', 'bathroomcount'])
+const BATH_KEYS = new Set([
+  'baths',
+  'bathrooms',
+  'baths_total',
+  'numbathrooms',
+  'bathroomstotal',
+  'bathroomcount',
+  'totalbathrooms',
+  'fullbathrooms',
+])
 const SQFT_KEYS = new Set([
   'sqft',
   'living_area_sqft',
   'living_area',
   'square_feet',
+  'squarefeet',
   'livingarea',
   'building_size',
   'squarefootage',
   'interior_sqft',
+  'abovegradetotalareasquarefeet',
 ])
 const LOT_KEYS = new Set([
   'lot_size_sqft',
@@ -226,6 +810,7 @@ const LOT_KEYS = new Set([
   'lotsize',
   'lot_sqft',
   'lotsquarefeet',
+  'lotsizeinsquarefeet',
   'land_area',
   'land_area_sqft',
   'parcel_size',
@@ -243,8 +828,21 @@ const GARAGE_KEYS = new Set([
   'covered_parking',
   'attached_garage',
 ])
-const WALK_KEYS = new Set(['walk_score', 'walkscore'])
-const YEAR_KEYS = new Set(['year_built', 'yearbuilt', 'built_year', 'construction_year'])
+const WALK_KEYS = new Set([
+  'walk_score',
+  'walkscore',
+  'walkscorevalue',
+  'neighborhoodwalkscore',
+  'walkability',
+])
+const YEAR_KEYS = new Set([
+  'year_built',
+  'yearbuilt',
+  'built_year',
+  'construction_year',
+  'buildingyearopened',
+  'yearopened',
+])
 
 function isPlausibleYear(n: number): boolean {
   return n >= 1800 && n <= 2035
@@ -374,6 +972,8 @@ function collectTextBlobs(data: Record<string, unknown>): string[] {
 
   pushFacts(data.amenities || data.features || data.highlights || data.key_features)
   pushFacts(data.keyFacts || data.key_facts || data.facts || data.propertyFacts || data.listing_facts)
+  pushFacts(data.keyDetails || data.regionalKeyDetails || data.buildingKeyDetails)
+  pushFacts(dig(data, ['detailedInfo.keyDetails', 'buildingInfo.buildingKeyDetails', 'listingDetails']))
   pushFacts(data.summary || data.size)
 
   const description = asString(dig(data, ['description', 'remarks', 'public_remarks', 'overview']))
@@ -397,7 +997,15 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
   const textBlobs = collectTextBlobs(data)
 
   const beds =
-    pickNumber(data, ['beds', 'bedrooms', 'beds_total', 'numBedrooms', 'bedroomsTotal', 'property.beds']) ??
+    pickNumber(data, [
+      'beds',
+      'bedrooms',
+      'beds_total',
+      'numBedrooms',
+      'bedroomsTotal',
+      'property.beds',
+      'mainHouseInfo.beds',
+    ]) ??
     findNumberByKeys(data, BED_KEYS) ??
     matchFromText(textBlobs, [
       /(\d+(?:\.\d+)?)\s*(?:bed(?:room)?s?|br|bd)\b/i,
@@ -405,11 +1013,38 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
     ])
 
   const bathsDirect =
-    pickNumber(data, ['baths', 'bathrooms', 'baths_total', 'numBathrooms', 'bathroomsTotal', 'property.baths']) ??
+    pickNumber(data, [
+      'totalBathrooms',
+      'baths',
+      'bathrooms',
+      'baths_total',
+      'numBathrooms',
+      'bathroomsTotal',
+      'property.baths',
+      'mainHouseInfo.baths',
+      'size.totalBathrooms',
+      'size.bathrooms',
+      'size.fullBathrooms',
+    ]) ??
     findNumberByKeys(data, BATH_KEYS)
 
-  const bathsFull = pickNumber(data, ['bathsFull', 'full_baths', 'bathroomsFull', 'fullBaths'])
-  const bathsHalf = pickNumber(data, ['bathsHalf', 'half_baths', 'bathroomsHalf', 'partialBaths', 'halfBaths'])
+  const bathsFull = pickNumber(data, [
+    'bathsFull',
+    'full_baths',
+    'bathroomsFull',
+    'fullBaths',
+    'fullBathrooms',
+    'size.fullBathrooms',
+  ])
+  const bathsHalf = pickNumber(data, [
+    'bathsHalf',
+    'half_baths',
+    'bathroomsHalf',
+    'partialBaths',
+    'halfBaths',
+    'halfBathrooms',
+    'size.halfBathrooms',
+  ])
 
   let baths = bathsDirect
   if (baths == null && bathsFull != null) {
@@ -428,6 +1063,7 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
       'living_area_sqft',
       'living_area',
       'square_feet',
+      'squareFeet',
       'livingArea',
       'livingAreaSqFt',
       'living_sqft',
@@ -441,6 +1077,7 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
       'building.sqft',
       'building.living_area',
       'building.livingArea',
+      'aboveGradeTotalAreaSquareFeet',
     ]) ??
     findNumberByKeys(data, SQFT_KEYS) ??
     matchFromText(textBlobs, [
@@ -461,7 +1098,9 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
       'land_area_sqft',
       'land_area',
       'parcel_size',
+      'lotSizeInSquareFeet',
       'size.lotSize',
+      'size.lotSizeInSquareFeet',
       'property.lotSize',
       'building.lot_size',
       'building.lotSize',
@@ -470,6 +1109,7 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
     matchFromText(textBlobs, [
       /lot(?:\s*size)?\s*[:#]?\s*([\d,]+)\s*(?:sq\.?\s*ft\.?|sqft|sf\b)/i,
       /([\d,]+)\s*(?:sq\.?\s*ft\.?|sf\b)\s*lot/i,
+      /(?:ac|acres?)\s*\/\s*([\d,]+)\s*(?:sf|sq)/i,
       /([\d,]+)\s*(?:lot|lot size)/i,
     ])
 
@@ -488,6 +1128,8 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
       'yearBuilt',
       'building.year_built',
       'building.yearBuilt',
+      'buildingInfo.buildingYearOpened',
+      'buildingYearOpened',
       'built_year',
       'construction_year',
     ]) ??
@@ -543,10 +1185,25 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
     if (garageText && !/^[\d.]+$/.test(garageText.trim())) garage = garageText
   }
 
-  const walkObj = dig(data, ['walkScore', 'walk_score'])
+  const walkObj = dig(data, [
+    'walkScore',
+    'walk_score',
+    'walkAndBikeScore',
+    'walkAndTransitScore',
+    'walkScoreData',
+    'walkScoreInfo',
+  ])
   let walkFromObj: number | null = null
   if (walkObj && typeof walkObj === 'object' && !Array.isArray(walkObj)) {
-    walkFromObj = pickWalkScore(walkObj as Record<string, unknown>, ['walkscore', 'score', 'value', 'walk_score'])
+    walkFromObj = pickWalkScore(walkObj as Record<string, unknown>, [
+      'walkscore',
+      'walkScore',
+      'score',
+      'value',
+      'walk_score',
+      'walkScore.walkScore',
+      'walkScore.score',
+    ])
   }
 
   const walkScore =
@@ -555,13 +1212,20 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
       'walkScore',
       'walkscore',
       'walkScore.walkscore',
+      'walkScore.walkScore',
       'walk_score.score',
       'walkScore.score',
+      'walkAndBikeScore.walkScore',
+      'walkAndBikeScore.walkScore.walkScore',
+      'walkAndTransitScore.walkscore',
+      'walkAndTransitScore.walkScore',
+      'walkAndTransitScore.walkScore.walkScore',
       'location.walkScore',
       'location.walk_score',
       'resoFacts.walkScore',
-      'walkAndTransitScore.walkscore',
-      'walkAndTransitScore.walkScore',
+      'neighborhoodWalkScore',
+      'scores.walk',
+      'scores.walkScore',
     ]) ??
     walkFromObj ??
     findWalkScoreByKeys(data) ??
@@ -607,6 +1271,7 @@ function looksLikeImageUrl(value: string): boolean {
   const v = value.trim()
   if (!/^https?:\/\//i.test(v)) return false
   if (/photos\.compass\.com/i.test(v)) return true
+  if (/compass\.com\/m\//i.test(v)) return true
   if (/photos\.zillowstatic\.com/i.test(v)) return true
   if (/cdn-redfin\.com/i.test(v)) return true
   if (IMAGE_URL_RE.test(v)) return true
@@ -617,39 +1282,40 @@ function looksLikeImageUrl(value: string): boolean {
 
 /** PullAPI + Zillow/Redfin photo fields on portal payloads. */
 function extractListingPhotos(data: Record<string, unknown>): string[] {
-  const photoObjects = data.photos
-  const fromPhotoObjects: string[] = []
-  if (Array.isArray(photoObjects)) {
-    for (const item of photoObjects) {
-      if (item && typeof item === 'object') {
-        const obj = item as Record<string, unknown>
-        if (typeof obj.url === 'string') fromPhotoObjects.push(obj.url)
-        if (typeof obj.href === 'string') fromPhotoObjects.push(obj.href)
-      }
-    }
-  }
-
+  const fromObjects = flattenPhotoUrls(data.photos)
   const primary = [
-    ...fromPhotoObjects,
+    ...fromObjects,
     ...asList(data.photos),
     ...asList(data.image_url),
     ...asList(data.image_urls),
     ...asList(data.images),
-    ...asList(dig(data, ['media.photos', 'gallery', 'photoUrls', 'building.photos', 'listingPhotos', 'propertyPhotos'])),
-  ].filter((u) => looksLikeImageUrl(u))
+    ...asList(
+      dig(data, [
+        'media.photos',
+        'gallery',
+        'photoUrls',
+        'building.photos',
+        'listingPhotos',
+        'propertyPhotos',
+        'mediaBrowserInfo.photos',
+        'photoList',
+      ]),
+    ),
+    ...extractPhotoUrls(data, 80),
+  ]
+    .filter((u) => looksLikeListingPhoto(u))
+    .map(upgradeRedfinPhotoUrl)
 
-  if (primary.length >= 2) return [...new Set(primary)]
-  return [...new Set([...primary, ...extractPhotoUrls(data)])]
+  return expandRedfinPhotoSequence([...new Set(primary)], pickPhotoCount(data))
 }
 /** Deep-collect listing photo URLs from nested portal payloads. */
-export function extractPhotoUrls(data: unknown, limit = 24): string[] {
+export function extractPhotoUrls(data: unknown, limit = 80): string[] {
   const found: string[] = []
   const seen = new Set<string>()
 
   const push = (raw: string) => {
-    let url = raw.trim().replace(/^\/\//, 'https://')
-    if (!looksLikeImageUrl(url)) return
-    // Prefer full-size when scrapers append tiny thumbs
+    let url = upgradeRedfinPhotoUrl(raw.trim())
+    if (!looksLikeListingPhoto(url)) return
     url = url.replace(/[?&](w|width)=\d+/gi, '').replace(/\?$/, '')
     if (seen.has(url)) return
     seen.add(url)
@@ -657,7 +1323,7 @@ export function extractPhotoUrls(data: unknown, limit = 24): string[] {
   }
 
   const walk = (node: unknown, depth: number) => {
-    if (found.length >= limit || depth > 8 || node == null) return
+    if (found.length >= limit || depth > 10 || node == null) return
     if (typeof node === 'string') {
       push(node)
       return
@@ -683,13 +1349,19 @@ export function extractPhotoUrls(data: unknown, limit = 24): string[] {
       'photoUrl',
       'imageUrl',
       'image_url',
+      'fullScreenPhotoUrl',
+      'fullscreenPhotoUrl',
+      'lightboxPhotoUrl',
+      'largePhotoUrl',
+      'nonFullScreenPhotoUrl',
+      'mediumPhotoUrl',
+      'tinyPhotoUrl',
     ]
     for (const key of preferredKeys) {
       const val = obj[key]
       if (typeof val === 'string') push(val)
     }
 
-    // Zillow mixedSources: { jpeg: [{ url, width }, ...] }
     if (obj.mixedSources && typeof obj.mixedSources === 'object') {
       const mixed = obj.mixedSources as Record<string, unknown>
       for (const format of Object.values(mixed)) {
@@ -704,29 +1376,8 @@ export function extractPhotoUrls(data: unknown, limit = 24): string[] {
       }
     }
 
-    const nestKeys = [
-      'photos',
-      'photo',
-      'images',
-      'image',
-      'image_urls',
-      'imageUrls',
-      'photoUrls',
-      'gallery',
-      'media',
-      'responsivePhotos',
-      'hugePhotos',
-      'originalPhotos',
-      'listingPhotos',
-      'propertyPhotos',
-      'pictures',
-      'thumbnails',
-      'data',
-      'property',
-      'resoFacts',
-    ]
-    for (const key of nestKeys) {
-      if (key in obj) walk(obj[key], depth + 1)
+    for (const value of Object.values(obj)) {
+      if (value && typeof value === 'object') walk(value, depth + 1)
     }
   }
 
@@ -736,7 +1387,7 @@ export function extractPhotoUrls(data: unknown, limit = 24): string[] {
 
 function buildImages(urls: string[]): ListingImage[] {
   const spans: ListingImage['span'][] = ['hero', 'wide', 'tall', 'square', 'wide', 'square', 'tall', 'square']
-  return urls.slice(0, 12).map((src, i) => ({
+  return urls.slice(0, 48).map((src, i) => ({
     src,
     alt: `Listing photo ${i + 1}`,
     span: spans[i] || 'square',
@@ -852,44 +1503,98 @@ export function googleMapsEmbedUrl(address: string): string {
   return `https://www.google.com/maps?q=${encodeURIComponent(q)}&z=15&output=embed`
 }
 
-function withJasonBrand(listing: Listing, sourceUrl: string): Listing {
-  return {
+function withAgentBrand(listing: Listing, sourceUrl: string, agent?: Agent): Listing {
+  const next = {
     ...listing,
     listingUrl: sourceUrl || listing.listingUrl,
-    website: 'https://www.jasonlimrealty.com',
-    agent: { ...BRAND_AGENT },
   }
+  if (!agent) return next
+  return applyAgentToListing(next, agent)
 }
 
-function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string): Listing {
+function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, agent?: Agent): Listing {
   const photos = extractListingPhotos(data)
   const amenities = asList(
     data.amenities || data.features || data.highlights || data.key_features || dig(data, ['resoFacts.highlights']),
   )
   const address = asString(
-    dig(data, ['street_address', 'address', 'name', 'location.streetAddress', 'address.streetAddress']),
+    dig(data, [
+      'street_address',
+      'address',
+      'name',
+      'address.streetAddress',
+      'address.street',
+      'location.streetAddress',
+      'streetAddress',
+    ]),
   )
-  const city = asString(dig(data, ['city', 'address.city', 'location.city']))
-  const state = asString(dig(data, ['state', 'address.state', 'location.state']))
-  const zip = asString(dig(data, ['zip_code', 'zipcode', 'zip', 'address.zipcode', 'address.zip']))
-  const neighborhood = asString(dig(data, ['neighborhood', 'area', 'subdivision', 'region', 'location']))
-  const description = asString(dig(data, ['description', 'remarks', 'public_remarks', 'overview']))
-  const price = money(dig(data, ['price', 'list_price', 'listPrice', 'priceInfo.price']))
+  const city = asString(
+    dig(data, [
+      'location.city',
+      'location.addressLocality',
+      'city',
+      'address.city',
+      'address.addressLocality',
+      'addressLocality',
+    ]),
+  )
+  const state = asString(
+    dig(data, ['state', 'address.state', 'address.addressRegion', 'location.state', 'addressRegion']),
+  )
+  const zip = asString(
+    dig(data, [
+      'zip_code',
+      'zipcode',
+      'zip',
+      'zipCode',
+      'address.zipcode',
+      'address.zip',
+      'address.postalCode',
+      'postalCode',
+      'location.zipCode',
+    ]),
+  )
+  const neighborhoodRaw = dig(data, ['neighborhood', 'location.neighborhood', 'area', 'subdivision'])
+  const neighborhood =
+    neighborhoodRaw && typeof neighborhoodRaw === 'object' ? '' : asString(neighborhoodRaw)
+  const resolvedCity =
+    city && neighborhood && city.toLowerCase() === neighborhood.toLowerCase()
+      ? asString(dig(data, ['location.city', 'location.addressLocality'])) || city
+      : city
+  const description = asString(
+    dig(data, [
+      'description',
+      'remarks',
+      'public_remarks',
+      'publicRemarks',
+      'marketingRemarks',
+      'listingDescription',
+      'listingRemarks',
+      'overview',
+    ]),
+  )
+  const price = money(
+    dig(data, ['price', 'list_price', 'listPrice', 'priceInfo.price', 'offers.price', 'listPrice.value']),
+  )
 
   const { beds, baths, sqft, lot, built, garage, walkScore } = extractPropertyStats(data)
 
   // Photos may be empty here — importListingFromUrl applies example fallback with a notice.
   const images = buildImages(photos)
-  const place = neighborhood || city || 'this neighborhood'
+  const place = neighborhood || resolvedCity || 'this neighborhood'
   const homeType = prettyHomeType(asString(dig(data, ['property_type', 'home_type', 'type', 'propertyType'])))
-  const regionHint = state && ['CA', 'California'].includes(state) ? 'Bay Area' : city || place
+  const regionHint = state && ['CA', 'California'].includes(state) ? 'Bay Area' : resolvedCity || place
+
+  const credit = agent
+    ? `prepared as a private listing brochure by ${agent.name}${agent.brokerage ? `, ${agent.brokerage}` : ''}.`
+    : 'prepared as a private listing brochure.'
 
   const fmtSqft = (n: number | null) => (n == null ? '—' : `${Math.round(n).toLocaleString()} SF`)
 
-  return withJasonBrand(
+  return withAgentBrand(
     {
       address: address || 'Address on request',
-      city,
+      city: resolvedCity,
       state,
       zip,
       neighborhood: place,
@@ -902,9 +1607,9 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string): Lis
       subhead: `A refined ${homeType} presentation for ${regionHint} sellers and buyers.`,
       about:
         description ||
-        `Discover this residence in ${place}. Thoughtful spaces, standout presentation, and a setting that makes everyday life feel considered — prepared as a private listing brochure by Jason Lim, Compass.`,
+        `Discover this residence in ${place}. Thoughtful spaces, standout presentation, and a setting that makes everyday life feel considered — ${credit}`,
       listingUrl: sourceUrl,
-      website: 'https://www.jasonlimrealty.com',
+      website: agent?.website || '',
       stats: [
         { label: 'Bedrooms', value: beds != null ? String(beds) : '—', icon: 'bed' },
         { label: 'Bathrooms', value: baths != null ? String(baths) : '—', icon: 'bath' },
@@ -912,6 +1617,7 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string): Lis
         { label: 'Lot Size', value: fmtSqft(lot), icon: 'lot' },
         { label: 'Garage', value: garage, icon: 'garage' },
         { label: 'Year Built', value: built != null ? String(built) : '—', icon: 'built' },
+        { label: 'Walk Score', value: walkScore > 0 ? String(walkScore) : '—', icon: 'walk' },
       ],
       images,
       features: featuresFromAmenities(amenities, description),
@@ -919,56 +1625,99 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string): Lis
       places: placesForLocation(neighborhood, city, data.schools),
       walkScore,
       lifestyle: lifestyleFromImages(images, neighborhood, city),
-      agent: BRAND_AGENT,
+      agent: agent || {
+        name: '',
+        title: 'REALTOR®',
+        brokerage: '',
+        phone: '',
+        email: '',
+        dre: '',
+        photo: '',
+        website: '',
+      },
+      market: emptyMarketReport(place),
     },
     sourceUrl,
+    agent,
   )
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function retryAfterMs(res: Response, attempt: number): number {
+  const header = res.headers.get('retry-after')
+  const fromHeader = header ? Number(header) : NaN
+  if (Number.isFinite(fromHeader) && fromHeader > 0) {
+    return Math.min(fromHeader * (fromHeader > 50 ? 1 : 1000), 12000)
+  }
+  return Math.min(1600 * 2 ** attempt, 10000)
+}
+
 async function rapidGet(host: string, path: string, apiKey: string): Promise<Record<string, unknown>> {
-  const res = await fetch(`https://${host}${path}`, {
-    headers: {
-      'x-rapidapi-key': apiKey,
-      'x-rapidapi-host': host,
-    },
-  })
-  const text = await res.text()
-  let json: Record<string, unknown> = {}
-  try {
-    json = JSON.parse(text) as Record<string, unknown>
-  } catch {
-    throw new Error(`API returned non-JSON (${res.status}).`)
+  const maxAttempts = 4
+  let lastStatus = 0
+  let lastMessage = ''
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const res = await fetch(`https://${host}${path}`, {
+      headers: {
+        'x-rapidapi-key': apiKey,
+        'x-rapidapi-host': host,
+      },
+    })
+    lastStatus = res.status
+    const text = await res.text()
+    let json: Record<string, unknown> = {}
+    try {
+      json = JSON.parse(text) as Record<string, unknown>
+    } catch {
+      throw new Error(`API returned non-JSON (${res.status}).`)
+    }
+    const apiMessage = asString(json.message || json.error)
+    lastMessage = apiMessage
+
+    if (/quota|exceeded|upgrade your plan/i.test(apiMessage) && !/too many requests|rate limit/i.test(apiMessage)) {
+      throw new Error(
+        'RapidAPI monthly quota exceeded for this listing API. Upgrade the plan on RapidAPI, or wait until quota resets, then re-import.',
+      )
+    }
+    if (res.status === 401 || res.status === 403) {
+      throw new PortalFetchError(`Not subscribed to ${RAPIDAPI_PRODUCT[host] || host} on RapidAPI.`, true)
+    }
+    if (res.status === 429 || /too many requests|rate limit/i.test(apiMessage)) {
+      if (attempt < maxAttempts - 1) {
+        await sleep(retryAfterMs(res, attempt))
+        continue
+      }
+      throw new PortalFetchError(
+        `Rate limited on ${RAPIDAPI_PRODUCT[host] || host}. Wait about a minute and retry.`,
+        true,
+      )
+    }
+    if (res.status === 404 || /endpoint.*does not exist|not found/i.test(apiMessage)) {
+      throw new PortalFetchError(apiMessage || `Endpoint not found on ${host}`, true)
+    }
+    if (res.status >= 400) {
+      throw new PortalFetchError(apiMessage || `API error ${res.status}`, res.status >= 500)
+    }
+    if (json.success === false) {
+      const msg = asString(json.error || json.message, 'Listing fetch failed')
+      throw new PortalFetchError(msg, /not found|invalid url|no data/i.test(msg))
+    }
+    return json
   }
-  const apiMessage = asString(json.message || json.error)
-  if (/quota|exceeded|upgrade your plan/i.test(apiMessage)) {
-    throw new Error(
-      'RapidAPI monthly quota exceeded for this listing API. Upgrade the plan on RapidAPI, or wait until quota resets, then re-import.',
-    )
-  }
-  if (res.status === 401 || res.status === 403) {
-    throw new PortalFetchError(
-      `Not subscribed to ${RAPIDAPI_PRODUCT[host] || host} on RapidAPI.`,
-      true,
-    )
-  }
-  if (res.status === 429) throw new Error('Rate limit hit. Wait a moment and retry.')
-  if (res.status === 404 || /endpoint.*does not exist|not found/i.test(apiMessage)) {
-    throw new PortalFetchError(apiMessage || `Endpoint not found on ${host}`, true)
-  }
-  if (res.status >= 400) {
-    throw new PortalFetchError(apiMessage || `API error ${res.status}`, res.status >= 500)
-  }
-  if (json.success === false) {
-    const msg = asString(json.error || json.message, 'Listing fetch failed')
-    throw new PortalFetchError(msg, /not found|invalid url|no data/i.test(msg))
-  }
-  return json
+
+  throw new PortalFetchError(lastMessage || `API error ${lastStatus}`, true)
 }
 
 async function fetchPortalRaw(
   attempts: Array<{ host: string; path: string }>,
   apiKey: string,
   portalLabel: string,
+  unwrap: (payload: Record<string, unknown>) => Record<string, unknown> = unwrapCompassPayload,
+  acceptPayload: (data: Record<string, unknown>) => boolean = () => true,
 ): Promise<Record<string, unknown>> {
   const failures: string[] = []
   let lastFatal: Error | null = null
@@ -976,27 +1725,38 @@ async function fetchPortalRaw(
   for (const { host, path } of attempts) {
     try {
       const json = await rapidGet(host, path, apiKey)
-      return unwrapCompassPayload(json)
+      const data = unwrap(json)
+      if (!acceptPayload(data)) {
+        failures.push(`${RAPIDAPI_PRODUCT[host] || host}: response had no listing fields`)
+        await sleep(200)
+        continue
+      }
+      return data
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err))
       const product = RAPIDAPI_PRODUCT[host] || host
       failures.push(`${product}: ${error.message}`)
 
-      if (/quota|exceeded|rate limit/i.test(error.message)) throw error
-      if (err instanceof PortalFetchError && err.skippable) continue
+      if (/quota|exceeded|upgrade your plan/i.test(error.message) && !/rate limit/i.test(error.message)) {
+        throw error
+      }
+      if (err instanceof PortalFetchError && err.skippable) {
+        await sleep(200)
+        continue
+      }
       lastFatal = error
     }
   }
 
   if (lastFatal && failures.length <= 1) throw lastFatal
 
-  const tried = attempts.map((a) => RAPIDAPI_PRODUCT[a.host] || a.host).join(' · ')
+  const tried = [...new Set(attempts.map((a) => RAPIDAPI_PRODUCT[a.host] || a.host))].join(' · ')
   throw new Error(
     `${portalLabel} import failed after trying: ${tried}. ` +
-      (failures.length
-        ? `Details: ${failures.join(' | ')}. `
-        : '') +
-      `Subscribe to one of those products on RapidAPI (same account key works once subscribed), then retry.`,
+      (failures.length ? `Details: ${failures.join(' | ')}. ` : '') +
+      (portalLabel === 'Zillow'
+        ? ZILLOW_SUBSCRIBE_HELP
+        : 'Subscribe to one of those products on RapidAPI (same account key works once subscribed), then retry.'),
   )
 }
 
@@ -1012,61 +1772,237 @@ function extractRedfinPropertyId(url: string): string | null {
   return m?.[1] || null
 }
 
+function compassPayloadHasData(data: Record<string, unknown>): boolean {
+  const address = dig(data, ['street_address', 'address', 'name', 'streetAddress'])
+  const price = dig(data, ['price', 'list_price', 'listPrice'])
+  const beds = dig(data, ['beds', 'bedrooms', 'size.bedrooms'])
+  const photos = extractListingPhotos(data)
+  return !!(address || price || beds || photos.length)
+}
+
 async function fetchCompassRaw(url: string, apiKey: string): Promise<Record<string, unknown>> {
-  return fetchPortalRaw(
-    [{ host: HOSTS.compass, path: `/compass/property?url=${encodeURIComponent(url)}` }],
-    apiKey,
-    'Compass',
-  )
+  const encoded = encodeURIComponent(url)
+  const attempts = [
+    { host: HOSTS.compass, path: `/compass/property?url=${encoded}` },
+    { host: HOSTS.compass, path: `/property?url=${encoded}` },
+    { host: HOSTS.compass, path: `/compass/listing?url=${encoded}` },
+  ]
+  let merged: Record<string, unknown> = {}
+  let hits = 0
+  const failures: string[] = []
+
+  for (const { host, path } of attempts) {
+    try {
+      const json = await rapidGet(host, path, apiKey)
+      const flat = flattenCompassPayload(json)
+      merged = mergeRecordFields(merged, flat)
+      hits += 1
+      await sleep(180)
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err))
+      failures.push(`${RAPIDAPI_PRODUCT[host] || host}: ${error.message}`)
+      if (/quota|exceeded|upgrade your plan/i.test(error.message) && !/rate limit/i.test(error.message)) {
+        throw error
+      }
+    }
+  }
+
+  merged = flattenCompassPayload({ success: true, data: merged })
+
+  if (!hits || !compassPayloadHasData(merged)) {
+    throw new Error(
+      `Compass import failed after trying property + listing endpoints. ` +
+        (failures.length ? failures.join(' | ') : 'No listing fields returned.'),
+    )
+  }
+
+  return merged
+}
+
+function unwrapZillowPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  let data = unwrapCompassPayload(payload)
+  if (data.props && typeof data.props === 'object' && !Array.isArray(data.props)) {
+    data = { ...data, ...(data.props as Record<string, unknown>) }
+  }
+  if (data.address && typeof data.address === 'object' && !Array.isArray(data.address)) {
+    const addr = data.address as Record<string, unknown>
+    data = {
+      ...data,
+      street_address: data.street_address || addr.streetAddress || addr.street,
+      city: data.city || addr.city,
+      state: data.state || addr.state,
+      zip: data.zip || addr.zipcode || addr.zipCode || addr.zip,
+      neighborhood: data.neighborhood || addr.neighborhood || addr.community,
+    }
+  }
+  if (data.resoFacts && typeof data.resoFacts === 'object' && !Array.isArray(data.resoFacts)) {
+    const facts = data.resoFacts as Record<string, unknown>
+    data = {
+      ...data,
+      ...facts,
+      resoFacts: facts,
+      beds: data.beds ?? facts.bedrooms ?? facts.beds,
+      baths: data.baths ?? facts.bathrooms ?? facts.baths,
+      sqft: data.sqft ?? facts.livingArea ?? facts.livingAreaValue,
+      lot_size_sqft: data.lot_size_sqft ?? facts.lotSize ?? facts.lotSizeSquareFeet,
+      year_built: data.year_built ?? facts.yearBuilt,
+      garageSpaces: data.garageSpaces ?? facts.garageSpaces ?? facts.parkingCapacity,
+    }
+  }
+  const photos = [
+    ...flattenPhotoUrls(data.photos),
+    ...flattenPhotoUrls(data.hugePhotos),
+    ...flattenPhotoUrls(data.originalPhotos),
+    ...flattenPhotoUrls(data.responsivePhotos),
+    ...flattenPhotoUrls(data.images),
+  ]
+  if (typeof data.imgSrc === 'string') photos.unshift(data.imgSrc)
+  if (photos.length) {
+    data = { ...data, photos: [...new Set(photos)], image_urls: [...new Set(photos)] }
+  }
+  return data
 }
 
 async function fetchZillowRaw(url: string, apiKey: string): Promise<Record<string, unknown>> {
+  const encoded = encodeURIComponent(url)
   const zpid = extractZpid(url)
-  const attempts: Array<{ host: string; path: string }> = []
-
+  const attempts: Array<{ host: string; path: string }> = [
+    { host: HOSTS.zillowCom1, path: `/propertyByUrl?url=${encoded}` },
+    { host: HOSTS.zillowCom1, path: `/property?url=${encoded}` },
+    { host: HOSTS.zillowRt, path: `/propertyByUrl?url=${encoded}` },
+    { host: HOSTS.zillowWorking, path: `/byurl?url=${encoded}` },
+    { host: HOSTS.zillow, path: zpid ? `/zillow/property/${zpid}` : `/zillow/property?url=${encoded}` },
+    { host: HOSTS.zillowAlt, path: `/property-details?url=${encoded}` },
+  ]
   if (zpid) {
-    attempts.push({ host: HOSTS.zillow, path: `/zillow/property/${zpid}` })
-    attempts.push({ host: HOSTS.zillow56, path: `/property?zpid=${zpid}` })
+    attempts.unshift({ host: HOSTS.zillow56, path: `/propertyV2?zpid=${zpid}` })
+    attempts.push({ host: HOSTS.zillowWorking2, path: `/byzpid?zpid=${zpid}` })
+    attempts.push({ host: HOSTS.zillowUs, path: `/api/v1/property/detail?zpid=${zpid}` })
   }
-  // Unified real-estate API last — often a separate subscription from Zillow Scraper
-  attempts.push({ host: HOSTS.zillowAlt, path: `/property-details?url=${encodeURIComponent(url)}` })
 
-  let data = await fetchPortalRaw(attempts, apiKey, 'Zillow')
+  let data = await fetchPortalRaw(attempts, apiKey, 'Zillow', unwrapZillowPayload)
 
-  if (zpid) {
-    try {
-      const photosJson = await rapidGet(HOSTS.zillow, `/zillow/photos/${zpid}`, apiKey)
-      const photoPayload = unwrapCompassPayload(photosJson)
-      const extra = extractListingPhotos(photoPayload)
-      if (extra.length) {
-        const merged = [...extractListingPhotos(data), ...extra]
-        data = { ...data, photos: [...new Set(merged)], image_urls: [...new Set(merged)] }
+  if (zpid && extractListingPhotos(data).length < 4) {
+    for (const { host, path } of [
+      { host: HOSTS.zillowCom1, path: `/images?zpid=${zpid}` },
+      { host: HOSTS.zillowRt, path: `/images?zpid=${zpid}` },
+      { host: HOSTS.zillow, path: `/zillow/photos/${zpid}` },
+    ]) {
+      try {
+        const photosJson = await rapidGet(host, path, apiKey)
+        const extra = extractListingPhotos(unwrapZillowPayload(photosJson))
+        if (extra.length) {
+          const merged = [...extractListingPhotos(data), ...extra]
+          data = { ...data, photos: [...new Set(merged)], image_urls: [...new Set(merged)] }
+          break
+        }
+      } catch {
+        // Optional photo enrichment
       }
-    } catch {
-      // Optional photo enrichment
     }
   }
 
   return data
 }
 
+async function tryRedfinMerge(
+  data: Record<string, unknown>,
+  host: string,
+  path: string,
+  apiKey: string,
+): Promise<Record<string, unknown>> {
+  try {
+    const json = await rapidGet(host, path, apiKey)
+    return mergeRecordFields(data, unwrapRedfinPayload(json))
+  } catch {
+    return data
+  }
+}
+
 async function fetchRedfinRaw(url: string, apiKey: string): Promise<Record<string, unknown>> {
   const encoded = encodeURIComponent(url)
-  const propertyId = extractRedfinPropertyId(url)
-  const attempts: Array<{ host: string; path: string }> = [
-    { host: HOSTS.redfin, path: `/details?url=${encoded}` },
+  const pathOnly = redfinPathFromUrl(url)
+  const pathEncoded = encodeURIComponent(pathOnly)
+  const propertyIdFromUrl = extractRedfinPropertyId(url)
+
+  let data: Record<string, unknown> = {}
+
+  // Step 1: resolve propertyId + listingId via initial_info / details
+  const bootstrapPaths = [
+    `/initial_info?url=${encoded}`,
+    `/initial_info?path=${pathEncoded}`,
+    `/details?url=${encoded}`,
+    `/property/details?url=${encoded}`,
+    `/details?url=${pathEncoded}`,
+  ]
+  for (const path of bootstrapPaths) {
+    data = await tryRedfinMerge(data, HOSTS.redfin, path, apiKey)
+    const ids = extractRedfinIds(data)
+    if (ids.propertyId && ids.listingId) break
+  }
+
+  if (!extractRedfinIds(data).propertyId && propertyIdFromUrl) {
+    data = mergeRecordFields(data, { propertyId: propertyIdFromUrl, property_id: propertyIdFromUrl })
+  }
+
+  data = mergeRecordFields(data, parseRedfinUrlMeta(url))
+
+  const { propertyId: pid, listingId: lid } = extractRedfinIds(data)
+  const propertyId = pid || propertyIdFromUrl || ''
+  const listingId = lid || ''
+
+  // Step 2: full listing details + photo gallery (needs propertyId + listingId)
+  if (propertyId) {
+    const listingParam = listingId || propertyId
+    const idQuery = `propertyId=${encodeURIComponent(propertyId)}&listingId=${encodeURIComponent(listingParam)}`
+    const accessQuery = `${idQuery}&accessLevel=1`
+
+    const enrichPaths = [
+      `/above_the_fold?${accessQuery}`,
+      `/photos?${idQuery}`,
+      `/walk_score?${accessQuery}`,
+      `/below_the_fold?${accessQuery}`,
+      `/mainHouseInfoPanelInfo?${accessQuery}`,
+    ]
+
+    for (const path of enrichPaths) {
+      data = await tryRedfinMerge(data, HOSTS.redfin, path, apiKey)
+      await sleep(250)
+    }
+  }
+
+  // Step 3: Real-Time Redfin Data — consolidated payload when subscribed
+  const altAttempts: Array<{ host: string; path: string }> = [
     { host: HOSTS.redfinAlt, path: `/property-details?url=${encoded}` },
   ]
   if (propertyId) {
-    attempts.push({
+    altAttempts.push({
       host: HOSTS.redfinAlt,
       path: `/property-details?property_id=${propertyId}`,
     })
   }
-  return fetchPortalRaw(attempts, apiKey, 'Redfin')
+  try {
+    const alt = await fetchPortalRaw(altAttempts, apiKey, 'Redfin alt', unwrapRedfinPayload, () => true)
+    data = mergeRecordFields(data, alt)
+  } catch {
+    // Optional — separate RapidAPI product
+  }
+
+  if (!redfinPayloadHasData(data)) {
+    throw new Error(
+      'Redfin import returned no listing fields. Subscribe to Redfin.com Data API on RapidAPI and retry.',
+    )
+  }
+
+  return data
 }
 
-async function fetchListing(url: string, source: ListingSource, apiKey: string): Promise<Listing> {
+async function fetchListing(
+  url: string,
+  source: ListingSource,
+  apiKey: string,
+  agent?: Agent,
+): Promise<{ listing: Listing; raw: Record<string, unknown> }> {
   let data: Record<string, unknown>
   switch (source) {
     case 'compass':
@@ -1081,7 +2017,301 @@ async function fetchListing(url: string, source: ListingSource, apiKey: string):
     default:
       throw new Error(`Unsupported listing source: ${source}`)
   }
-  return normalizeGeneric(data, url)
+  return { listing: normalizeGeneric(data, url, agent), raw: data }
+}
+
+function locationCandidates(listing: Listing): string[] {
+  const { city, state, zip, neighborhood } = listing
+  const out: string[] = []
+  if (city && state) out.push(`${city}, ${state}`)
+  if (zip) out.push(zip)
+  if (city && state && zip) out.push(`${city}, ${state} ${zip}`)
+  if (neighborhood && city && state) out.push(`${neighborhood}, ${city}, ${state}`)
+  return [...new Set(out.filter(Boolean))]
+}
+
+function bedsHint(listing: Listing): { min?: number; max?: number } {
+  const beds = Number(listing.stats.find((s) => s.label === 'Bedrooms')?.value)
+  if (!Number.isFinite(beds) || beds <= 0) return {}
+  return { min: Math.max(1, beds - 1), max: beds + 1 }
+}
+
+function extractLatLon(raw?: Record<string, unknown>): { lat: number; lng: number } | null {
+  if (!raw) return null
+  const latLong = raw.latLong && typeof raw.latLong === 'object' ? (raw.latLong as Record<string, unknown>) : null
+  const lat = num(latLong?.latitude ?? raw.latitude ?? dig(raw, ['geo.latitude', 'address.latitude']))
+  const lng = num(latLong?.longitude ?? raw.longitude ?? dig(raw, ['geo.longitude', 'address.longitude']))
+  if (lat == null || lng == null) return null
+  return { lat, lng }
+}
+
+function extractZpidFromRaw(raw?: Record<string, unknown>, url?: string): string | null {
+  const fromUrl = url ? extractZpid(url) : null
+  if (fromUrl) return fromUrl
+  if (!raw) return null
+  return asString(dig(raw, ['zpid', 'zpidString', 'propertyZpid', 'homeInfo.zpid'])) || null
+}
+
+function mergeCompLists(...lists: MarketComp[][]): MarketComp[] {
+  const seen = new Set<string>()
+  const out: MarketComp[] = []
+  for (const list of lists) {
+    for (const comp of list) {
+      const key = `${comp.address}|${comp.status}|${comp.price}`.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(comp)
+    }
+  }
+  return out
+}
+
+async function tryComps(
+  host: string,
+  path: string,
+  apiKey: string,
+  fallback?: 'sold' | 'listed',
+): Promise<{ comps: MarketComp[]; error?: string }> {
+  try {
+    const json = await rapidGet(host, path, apiKey)
+    const comps = compsFromPayload(json, fallback)
+    return { comps }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { comps: [], error: `${RAPIDAPI_PRODUCT[host] || host}: ${message}` }
+  }
+}
+
+function propertyCompQueries(zpid: string | null, sourceUrl: string, listing: Listing): string[] {
+  const queries: string[] = []
+  const address = fullAddress(listing)
+  if (zpid) queries.push(`zpid=${encodeURIComponent(zpid)}`)
+  if (sourceUrl.trim()) {
+    const encUrl = encodeURIComponent(sourceUrl.trim())
+    queries.push(`url=${encUrl}`, `property_url=${encUrl}`)
+  }
+  if (address.trim()) queries.push(`address=${encodeURIComponent(address.trim())}`)
+  return [...new Set(queries)]
+}
+
+async function fetchZillowMarketComps(
+  listing: Listing,
+  apiKey: string,
+  sourceUrl: string,
+  raw?: Record<string, unknown>,
+): Promise<{ comps: MarketComp[]; errors: string[] }> {
+  const zpid = extractZpidFromRaw(raw, sourceUrl)
+  const coords = extractLatLon(raw)
+  const locations = locationCandidates(listing).slice(0, 3)
+  const beds = bedsHint(listing)
+  const bedMinQs = beds.min != null ? `&bedsMin=${beds.min}` : ''
+  const idQueries = propertyCompQueries(zpid, sourceUrl, listing)
+  const batches: MarketComp[][] = []
+  const errors: string[] = []
+  const pushErrors = (list: Array<{ error?: string }>) => {
+    for (const row of list) {
+      if (row.error && !errors.includes(row.error)) errors.push(row.error)
+    }
+  }
+
+  if (raw) batches.push(compsFromPayload(raw))
+
+  type Attempt = { host: string; path: string; fallback?: 'sold' | 'listed' }
+  const attempts: Attempt[] = []
+
+  for (const q of idQueries) {
+    attempts.push(
+      { host: HOSTS.zillow56, path: `/similar_sold_properties?${q}`, fallback: 'sold' },
+      { host: HOSTS.zillow56, path: `/similar_properties?${q}`, fallback: 'listed' },
+    )
+    for (const host of [HOSTS.zillowCom1, HOSTS.zillowMarket]) {
+      attempts.push({ host, path: `/propertyComps?${q}` })
+    }
+  }
+
+  for (const loc of locations) {
+    const locQs = encodeURIComponent(loc)
+    attempts.push({ host: HOSTS.zillow56, path: `/search?location=${locQs}` })
+    for (const status of [
+      { type: 'RecentlySold', fallback: 'sold' as const },
+      { type: 'ForSale', fallback: 'listed' as const },
+    ]) {
+      for (const host of [HOSTS.zillowCom1, HOSTS.zillowMarket]) {
+        attempts.push({
+          host,
+          path: `/propertyExtendedSearch?location=${locQs}&status_type=${status.type}&home_type=Houses${bedMinQs}`,
+          fallback: status.fallback,
+        })
+      }
+    }
+  }
+
+  if (coords) {
+    for (const status of [
+      { q: 'RECENTLY_SOLD', fallback: 'sold' as const },
+      { q: 'FOR_SALE', fallback: 'listed' as const },
+    ]) {
+      attempts.push({
+        host: HOSTS.zillowRt,
+        path: `/search-coordinates?latitude=${coords.lat}&longitude=${coords.lng}&home_status=${status.q}`,
+        fallback: status.fallback,
+      })
+    }
+  }
+
+  for (const loc of locations.slice(0, 2)) {
+    const locQs = encodeURIComponent(loc)
+    for (const status of [
+      { q: 'RECENTLY_SOLD', fallback: 'sold' as const },
+      { q: 'FOR_SALE', fallback: 'listed' as const },
+    ]) {
+      attempts.push({
+        host: HOSTS.zillowRt,
+        path: `/search?location=${locQs}&home_status=${status.q}`,
+        fallback: status.fallback,
+      })
+    }
+  }
+
+  for (const { host, path, fallback } of attempts) {
+    const result = await tryComps(host, path, apiKey, fallback)
+    if (result.error) pushErrors([result])
+    if (result.comps.length) batches.push(result.comps)
+    await sleep(180)
+    if (mergeCompLists(...batches).length >= 8) break
+  }
+
+  return { comps: mergeCompLists(...batches), errors }
+}
+
+async function fetchRedfinMarketComps(
+  apiKey: string,
+  raw?: Record<string, unknown>,
+  sourceUrl?: string,
+): Promise<{ comps: MarketComp[]; errors: string[] }> {
+  const { propertyId, listingId } = extractRedfinIds(raw || {})
+  const pid = propertyId || extractRedfinPropertyId(sourceUrl || '') || ''
+  const lid = listingId || pid
+  if (!pid) return { comps: raw ? compsFromPayload(raw) : [], errors: [] }
+
+  const q = `propertyId=${encodeURIComponent(pid)}&listingId=${encodeURIComponent(lid)}`
+  const paths: Array<{ path: string; status?: 'sold' | 'listed' }> = [
+    { path: `/similars_solds?${q}`, status: 'sold' },
+    { path: `/similars/listings?${q}`, status: 'listed' },
+    { path: `/similars/solds?${q}`, status: 'sold' },
+    { path: `/similar_sold?${q}`, status: 'sold' },
+    { path: `/similar_listings?${q}`, status: 'listed' },
+    { path: `/nearby_homes?${q}` },
+    { path: `/nearbyhomes?${q}` },
+  ]
+  const batches: MarketComp[][] = []
+  const errors: string[] = []
+  if (raw) batches.push(compsFromPayload(raw))
+
+  for (const row of paths) {
+    const result = await tryComps(HOSTS.redfin, row.path, apiKey, row.status)
+    if (result.error && !errors.includes(result.error)) errors.push(result.error)
+    if (result.comps.length) batches.push(result.comps)
+    await sleep(200)
+    if (mergeCompLists(...batches).length >= 8) break
+  }
+
+  return { comps: mergeCompLists(...batches), errors }
+}
+
+function emptyCompsSummary(
+  source: ListingSource,
+  errors: string[],
+): string {
+  const notSubscribed = errors.filter((e) => /not subscribed|401|403/i.test(e))
+  const rateLimited = errors.filter((e) => /rate limit|429/i.test(e))
+  const uniqueProducts = [...new Set(notSubscribed.map((e) => e.split(':')[0]))]
+
+  if (notSubscribed.length && uniqueProducts.length) {
+    return (
+      `Market comps need a separate RapidAPI subscription from listing import. ` +
+      `Your key worked for the property page, but not for search/comps on: ${uniqueProducts.slice(0, 3).join(', ')}. ` +
+      `Subscribe to Zillow (zillow-com1 or zillow56) or Redfin on RapidAPI, then use New URL to re-import.`
+    )
+  }
+  if (rateLimited.length) {
+    return 'RapidAPI rate-limited the comp search. Wait a minute and re-import with New URL.'
+  }
+  if (source === 'zillow') {
+    return (
+      'No nearby comps returned for this area. Listing import and comp search use different RapidAPI products — ' +
+      'subscribe to zillow-com1 or zillow56 (similar_sold_properties / propertyExtendedSearch), then re-import.'
+    )
+  }
+  return 'No nearby comps came back. Add a Zillow RapidAPI key (zillow-com1 or zillow56) for ZIP search, or re-import from Redfin for similar-home endpoints.'
+}
+
+async function fetchMarketReport(
+  listing: Listing,
+  keys: PortalApiKeys,
+  sourceUrl: string,
+  source: ListingSource,
+  raw?: Record<string, unknown>,
+  importApiKey?: string,
+): Promise<MarketReport> {
+  const apiKey = importApiKey?.trim() || portalKeyForSource(source, keys)
+  const all: MarketComp[] = []
+  const sources: string[] = []
+  const compErrors: string[] = []
+
+  if (raw) {
+    const embedded = compsFromPayload(raw)
+    if (embedded.length) {
+      all.push(...embedded)
+      sources.push(sourceLabel(source))
+    }
+  }
+
+  if (source === 'zillow' && apiKey) {
+    const { comps: zillowComps, errors } = await fetchZillowMarketComps(listing, apiKey, sourceUrl, raw)
+    compErrors.push(...errors)
+    if (zillowComps.length) {
+      all.push(...zillowComps)
+      if (!sources.includes('Zillow')) sources.push('Zillow')
+    }
+  } else if (source === 'redfin' && apiKey) {
+    const { comps: redfinComps, errors } = await fetchRedfinMarketComps(apiKey, raw, sourceUrl)
+    compErrors.push(...errors)
+    if (redfinComps.length) {
+      all.push(...redfinComps)
+      sources.push('Redfin')
+    }
+  }
+
+  const zillowKey = keys.zillow?.trim() || (source === 'zillow' ? apiKey : '')
+  if (zillowKey && source !== 'zillow' && mergeCompLists(all).length < 6) {
+    const { comps: extra, errors } = await fetchZillowMarketComps(listing, zillowKey, sourceUrl, raw)
+    compErrors.push(...errors)
+    if (extra.length) {
+      all.push(...extra)
+      if (!sources.includes('Zillow')) sources.push('Zillow')
+    }
+  }
+
+  const redfinKey = keys.redfin?.trim() || (source === 'redfin' ? apiKey : '')
+  if (redfinKey && source !== 'redfin' && mergeCompLists(all).length < 6) {
+    const { comps: extra, errors } = await fetchRedfinMarketComps(redfinKey, raw, sourceUrl)
+    compErrors.push(...errors)
+    if (extra.length) {
+      all.push(...extra)
+      if (!sources.includes('Redfin')) sources.push('Redfin')
+    }
+  }
+
+  const merged = mergeCompLists(all)
+
+  if (!merged.length) {
+    const empty = emptyMarketReport([listing.neighborhood, listing.city, listing.zip].filter(Boolean).join(' · '))
+    empty.summary = emptyCompsSummary(source, compErrors)
+    return empty
+  }
+
+  return buildMarketReport(listing, merged, sources)
 }
 
 function portalKeyForSource(source: ListingSource, keys: PortalApiKeys): string {
@@ -1114,7 +2344,11 @@ export type ImportResult = {
   notice: string
 }
 
-export async function importListingFromUrl(url: string, keys: PortalApiKeys | string): Promise<ImportResult> {
+export async function importListingFromUrl(
+  url: string,
+  keys: PortalApiKeys | string,
+  agent?: Agent,
+): Promise<ImportResult> {
   const trimmed = url.trim()
   if (!trimmed) throw new Error('Paste a Compass, Zillow, or Redfin listing URL first.')
 
@@ -1134,13 +2368,33 @@ export async function importListingFromUrl(url: string, keys: PortalApiKeys | st
       source === 'compass'
         ? 'Compass.com Real Estate Data API'
         : source === 'zillow'
-          ? 'Zillow Scraper API (recommended) or Zillow56'
+          ? 'Zillow (zillow-com1) on RapidAPI — click Subscribe, then paste the same account key'
           : 'Redfin.com Data API (recommended) or Real-Time Redfin Data'
     throw new Error(`Add your RapidAPI key for ${sourceLabel(source)}. Subscribe to ${products} on RapidAPI.`)
   }
 
-  let listing = await fetchListing(trimmed, source, apiKey)
+  const { listing: imported, raw: rawPortal } = await fetchListing(trimmed, source, apiKey, agent)
+  let listing = imported
+
+  if (source === 'redfin' && listing.images.length) {
+    const reachable = await probeReachablePhotos(listing.images.map((img) => img.src))
+    if (reachable.length) {
+      listing = syncLifestyleFromImages({ ...listing, images: buildImages(reachable) })
+    }
+  }
   let usedExamplePhotos = false
+
+  try {
+    listing = {
+      ...listing,
+      market: SHOW_MARKET_TRENDS
+        ? await fetchMarketReport(listing, portalKeys, trimmed, source, rawPortal, apiKey)
+        : emptyMarketReport([listing.neighborhood, listing.city, listing.zip].filter(Boolean).join(' · ')),
+    }
+  } catch {
+    listing = { ...listing, market: emptyMarketReport([listing.neighborhood, listing.city, listing.zip].filter(Boolean).join(' · ')) }
+  }
+
   let notice = buildImportNotice(listing, source, listing.images.length)
 
   if (!listing.images.length) {
@@ -1151,6 +2405,8 @@ export async function importListingFromUrl(url: string, keys: PortalApiKeys | st
     })
     notice = `${sourceLabel(source)} facts loaded, but RapidAPI returned no photo URLs. Example photos were added — replace them in Edit brochure.`
   }
+
+  if (agent) listing = applyAgentToListing(listing, agent)
 
   return { listing, source, usedExamplePhotos, notice }
 }

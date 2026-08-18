@@ -1,5 +1,6 @@
-import { BedDouble, Bath, Ruler, Trees, Car, CalendarDays } from 'lucide-react'
+import { BedDouble, Bath, Ruler, Trees, Car, CalendarDays, Footprints } from 'lucide-react'
 import type { Listing, ListingStat } from '../data/listing'
+import { SECTION_IDS } from '../lib/sectionNav'
 import { FadeIn } from './ui/FadeIn'
 
 const iconMap = {
@@ -9,6 +10,7 @@ const iconMap = {
   lot: Trees,
   garage: Car,
   built: CalendarDays,
+  walk: Footprints,
 }
 
 function StatCard({ stat, index }: { stat: ListingStat; index: number }) {
@@ -26,7 +28,10 @@ function StatCard({ stat, index }: { stat: ListingStat; index: number }) {
 
 export function PropertyStats({ listing }: { listing: Listing }) {
   return (
-    <section className="brochure-page surface-warm px-6 py-16 md:px-12 md:py-20 lg:px-16">
+    <section
+      id={SECTION_IDS.about}
+      className="brochure-page brochure-section surface-warm px-6 py-16 md:px-12 md:py-20 lg:px-16"
+    >
       <div className="mx-auto flex min-h-[calc(100vh-8rem)] max-w-6xl flex-col justify-center">
         <FadeIn>
           <p className="eyebrow">About the home</p>

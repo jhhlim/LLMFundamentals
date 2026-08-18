@@ -1,18 +1,20 @@
 ---
-title: Jason Lim Luxury Listing Brochure
+title: Listing Brochure Studio
 emoji: 🏡
 colorFrom: blue
 colorTo: yellow
 sdk: static
 pinned: false
 license: apache-2.0
-short_description: Compass RapidAPI listing → luxury brochure + Letter PDF
+short_description: Agent-branded luxury brochure from listing URLs
 ---
 
-# Jason Lim · Luxury Listing Brochure
+# Listing Brochure Studio
 
-Import a **Compass**, **Zillow**, or **Redfin** listing URL. Photos and facts via RapidAPI (separate key per portal).
+Sign in with your agent profile (Compass, Keller Williams, eXp, RE/MAX, and others). Import a **Compass**, **Zillow**, or **Redfin** listing URL. Photos and facts via RapidAPI (separate key per portal). Your name, photo, license, and brokerage print on the brochure.
 
 **Stats scraped:** beds, baths, living area, lot size, garage, year built, walk score (when API returns them).
+
+**Market trends:** recently sold and currently listed comps in the same ZIP when a Zillow (zillow-com1) or Redfin RapidAPI key can search.
 
 Dark/Light theme toggles the full brochure surfaces. Edit brochure for photos/facts. Print/PDF with Background graphics on.

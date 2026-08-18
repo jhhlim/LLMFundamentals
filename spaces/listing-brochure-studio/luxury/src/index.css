@@ -46,6 +46,19 @@
     min-height: 100vh;
   }
 
+  .brochure-section {
+    scroll-margin-top: 8.5rem;
+  }
+
+  .section-nav-scroll {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .section-nav-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
   .editorial-display {
     @apply font-serif font-medium tracking-[-0.02em] leading-[1.05];
   }
@@ -87,6 +100,26 @@
 
   .prose-muted {
     @apply text-stone dark:text-stone-light/75;
+  }
+
+  /* Light editor overlays stay readable when the brochure is in dark mode */
+  .editor-sheet {
+    color: var(--color-ink);
+    color-scheme: light;
+  }
+
+  .editor-sheet .eyebrow {
+    color: var(--color-stone);
+  }
+
+  .fact-field {
+    @apply rounded-xl border border-ink/15 bg-white px-3 py-2 text-sm text-ink outline-none;
+    @apply placeholder:text-stone/70;
+  }
+
+  .fact-field:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent) 22%, transparent);
   }
 }
 
@@ -473,5 +506,37 @@
 
   .print-qr.light {
     background: #fff;
+  }
+
+  .print-comp-grid {
+    margin-top: 0.22in;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.12in;
+  }
+
+  .print-comp {
+    border: 1px solid #e4ddd0;
+    border-radius: 0.1in;
+    padding: 0.12in 0.14in;
+  }
+
+  .print-comp strong {
+    display: block;
+    margin: 0.04in 0;
+    font-size: 10pt;
+    color: #0b1f33;
+  }
+
+  .print-comp p {
+    margin: 0;
+    font-size: 8.5pt;
+    color: #5c574e;
+  }
+
+  .print-comp-note {
+    margin-top: 0.2in;
+    font-size: 8pt;
+    color: #8a8478;
   }
 }

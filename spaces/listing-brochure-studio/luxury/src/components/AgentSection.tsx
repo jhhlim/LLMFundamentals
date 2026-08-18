@@ -1,13 +1,18 @@
 import { QRCodeSVG } from 'qrcode.react'
 import { Globe, Mail, Phone } from 'lucide-react'
 import type { Listing } from '../data/listing'
+import { SECTION_IDS } from '../lib/sectionNav'
+import { displayWebsite } from '../lib/agentAuth'
 import { FadeIn } from './ui/FadeIn'
 
 export function AgentSection({ listing }: { listing: Listing }) {
   const { agent } = listing
 
   return (
-    <section className="brochure-page surface-ink relative overflow-hidden">
+    <section
+      id={SECTION_IDS.agent}
+      className="brochure-page brochure-section surface-ink relative overflow-hidden"
+    >
       <div className="absolute inset-0">
         <img
           src={listing.images[0]?.src}
@@ -49,25 +54,33 @@ export function AgentSection({ listing }: { listing: Listing }) {
           </FadeIn>
 
           <FadeIn delay={0.15} className="space-y-4 lg:justify-self-end">
-            <a href={`tel:${agent.phone}`} className="flex items-center gap-3 text-lg hover:text-gold-soft">
-              <Phone className="h-5 w-5 text-gold-soft" /> {agent.phone}
-            </a>
-            <a href={`mailto:${agent.email}`} className="flex items-center gap-3 text-lg hover:text-gold-soft">
-              <Mail className="h-5 w-5 text-gold-soft" /> {agent.email}
-            </a>
-            <a
-              href={agent.website}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-3 text-lg hover:text-gold-soft"
-            >
-              <Globe className="h-5 w-5 text-gold-soft" /> jasonlimrealty.com
-            </a>
+            {agent.phone ? (
+              <a href={`tel:${agent.phone}`} className="flex items-center gap-3 text-lg hover:text-gold-soft">
+                <Phone className="h-5 w-5 text-gold-soft" /> {agent.phone}
+              </a>
+            ) : null}
+            {agent.email ? (
+              <a href={`mailto:${agent.email}`} className="flex items-center gap-3 text-lg hover:text-gold-soft">
+                <Mail className="h-5 w-5 text-gold-soft" /> {agent.email}
+              </a>
+            ) : null}
+            {agent.website ? (
+              <a
+                href={agent.website}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-3 text-lg hover:text-gold-soft"
+              >
+                <Globe className="h-5 w-5 text-gold-soft" /> {displayWebsite(agent.website) || agent.website}
+              </a>
+            ) : null}
           </FadeIn>
         </div>
 
         <FadeIn delay={0.2} className="mt-16 border-t border-white/15 pt-6 text-sm text-white/45">
-          Compass · Silicon Valley · {agent.dre} · All information deemed reliable but not guaranteed.
+          {[agent.brokerage, agent.dre].filter(Boolean).join(' · ')}
+          {agent.brokerage || agent.dre ? ' · ' : ''}
+          All information deemed reliable but not guaranteed.
         </FadeIn>
       </div>
     </section>

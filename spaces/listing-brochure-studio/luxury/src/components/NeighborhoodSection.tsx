@@ -1,5 +1,6 @@
 import { School, UtensilsCrossed, Trees, ShoppingBag, TrainFront, Building2, MapPinned } from 'lucide-react'
 import type { Listing } from '../data/listing'
+import { SECTION_IDS } from '../lib/sectionNav'
 import { fullAddress, googleMapsEmbedUrl } from '../lib/listingImport'
 import { FadeIn } from './ui/FadeIn'
 
@@ -25,7 +26,10 @@ export function NeighborhoodSection({ listing }: { listing: Listing }) {
           : 'Set Walk Score in Edit brochure, or leave blank for print.'
 
   return (
-    <section className="brochure-page surface-ink px-6 py-16 md:px-12 md:py-20 lg:px-16">
+    <section
+      id={SECTION_IDS.neighborhood}
+      className="brochure-page brochure-section surface-ink px-6 py-16 md:px-12 md:py-20 lg:px-16"
+    >
       <div className="mx-auto grid min-h-[calc(100vh-8rem)] max-w-6xl items-center gap-12 lg:grid-cols-[1.05fr_0.95fr]">
         <div>
           <FadeIn>

@@ -1,9 +1,13 @@
 import type { Listing } from '../data/listing'
+import { SECTION_IDS } from '../lib/sectionNav'
 import { FadeIn } from './ui/FadeIn'
 
 export function LifestyleSection({ listing }: { listing: Listing }) {
   return (
-    <section className="brochure-page surface-light px-6 py-16 md:px-12 md:py-20 lg:px-16">
+    <section
+      id={SECTION_IDS.lifestyle}
+      className="brochure-page brochure-section surface-light px-6 py-16 md:px-12 md:py-20 lg:px-16"
+    >
       <div className="mx-auto max-w-6xl">
         <FadeIn>
           <p className="eyebrow">Lifestyle</p>
