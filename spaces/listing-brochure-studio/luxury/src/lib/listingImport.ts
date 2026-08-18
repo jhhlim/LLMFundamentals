@@ -578,7 +578,12 @@ function unwrapCompassPayload(payload: Record<string, unknown>): Record<string, 
   }
   if (data.building && typeof data.building === 'object' && !Array.isArray(data.building)) {
     const building = data.building as Record<string, unknown>
-    data = { ...data, ...building, building }
+    data = {
+      ...data,
+      ...building,
+      building,
+      year_built: data.year_built ?? building.year_built ?? building.yearBuilt,
+    }
   }
   if (data.size && typeof data.size === 'object' && !Array.isArray(data.size)) {
     const size = data.size as Record<string, unknown>
@@ -692,10 +697,26 @@ function deepMergeCompassListing(
     obj.detailedInfo != null ||
     obj.buildingInfo != null ||
     obj.listingRelation != null ||
+    obj.listing != null ||
+    obj.beds != null ||
+    obj.baths != null ||
+    obj.bathrooms != null ||
+    obj.sqft != null ||
     (obj.bedrooms != null && (obj.squareFeet != null || obj.totalBathrooms != null))
 
   if (hasListingShape) {
     Object.assign(into, mergeRecordFields(into, unwrapCompassPayload(obj)))
+  }
+
+  for (const key of ['listingRelation', 'listing', 'property', 'data']) {
+    const nested = obj[key]
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      const node = nested as Record<string, unknown>
+      if (key === 'listingRelation' && node.listing) {
+        deepMergeCompassListing(node.listing, into, depth + 1, seen)
+      }
+      deepMergeCompassListing(node, into, depth + 1, seen)
+    }
   }
 
   for (const value of Object.values(obj)) {
@@ -1003,6 +1024,7 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
       'mainHouseInfo.baths',
       'size.totalBathrooms',
       'size.bathrooms',
+      'size.fullBathrooms',
     ]) ??
     findNumberByKeys(data, BATH_KEYS)
 
@@ -1041,6 +1063,7 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
       'living_area_sqft',
       'living_area',
       'square_feet',
+      'squareFeet',
       'livingArea',
       'livingAreaSqFt',
       'living_sqft',
@@ -1048,7 +1071,6 @@ export function extractPropertyStats(data: Record<string, unknown>): PropertySta
       'building_size',
       'squareFootage',
       'interior_sqft',
-      'squareFeet',
       'size.squareFeet',
       'size.livingArea',
       'property.livingArea',
@@ -1507,7 +1529,14 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, agen
     ]),
   )
   const city = asString(
-    dig(data, ['city', 'address.city', 'address.addressLocality', 'location.city', 'addressLocality']),
+    dig(data, [
+      'location.city',
+      'location.addressLocality',
+      'city',
+      'address.city',
+      'address.addressLocality',
+      'addressLocality',
+    ]),
   )
   const state = asString(
     dig(data, ['state', 'address.state', 'address.addressRegion', 'location.state', 'addressRegion']),
@@ -1525,9 +1554,13 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, agen
       'location.zipCode',
     ]),
   )
-  const neighborhoodRaw = dig(data, ['neighborhood', 'area', 'subdivision', 'location.neighborhood'])
+  const neighborhoodRaw = dig(data, ['neighborhood', 'location.neighborhood', 'area', 'subdivision'])
   const neighborhood =
     neighborhoodRaw && typeof neighborhoodRaw === 'object' ? '' : asString(neighborhoodRaw)
+  const resolvedCity =
+    city && neighborhood && city.toLowerCase() === neighborhood.toLowerCase()
+      ? asString(dig(data, ['location.city', 'location.addressLocality'])) || city
+      : city
   const description = asString(
     dig(data, [
       'description',
@@ -1548,9 +1581,9 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, agen
 
   // Photos may be empty here — importListingFromUrl applies example fallback with a notice.
   const images = buildImages(photos)
-  const place = neighborhood || city || 'this neighborhood'
+  const place = neighborhood || resolvedCity || 'this neighborhood'
   const homeType = prettyHomeType(asString(dig(data, ['property_type', 'home_type', 'type', 'propertyType'])))
-  const regionHint = state && ['CA', 'California'].includes(state) ? 'Bay Area' : city || place
+  const regionHint = state && ['CA', 'California'].includes(state) ? 'Bay Area' : resolvedCity || place
 
   const credit = agent
     ? `prepared as a private listing brochure by ${agent.name}${agent.brokerage ? `, ${agent.brokerage}` : ''}.`
@@ -1561,7 +1594,7 @@ function normalizeGeneric(data: Record<string, unknown>, sourceUrl: string, agen
   return withAgentBrand(
     {
       address: address || 'Address on request',
-      city,
+      city: resolvedCity,
       state,
       zip,
       neighborhood: place,
@@ -1739,18 +1772,51 @@ function extractRedfinPropertyId(url: string): string | null {
   return m?.[1] || null
 }
 
+function compassPayloadHasData(data: Record<string, unknown>): boolean {
+  const address = dig(data, ['street_address', 'address', 'name', 'streetAddress'])
+  const price = dig(data, ['price', 'list_price', 'listPrice'])
+  const beds = dig(data, ['beds', 'bedrooms', 'size.bedrooms'])
+  const photos = extractListingPhotos(data)
+  return !!(address || price || beds || photos.length)
+}
+
 async function fetchCompassRaw(url: string, apiKey: string): Promise<Record<string, unknown>> {
   const encoded = encodeURIComponent(url)
-  return fetchPortalRaw(
-    [
-      { host: HOSTS.compass, path: `/compass/property?url=${encoded}` },
-      { host: HOSTS.compass, path: `/property?url=${encoded}` },
-      { host: HOSTS.compass, path: `/compass/listing?url=${encoded}` },
-    ],
-    apiKey,
-    'Compass',
-    flattenCompassPayload,
-  )
+  const attempts = [
+    { host: HOSTS.compass, path: `/compass/property?url=${encoded}` },
+    { host: HOSTS.compass, path: `/property?url=${encoded}` },
+    { host: HOSTS.compass, path: `/compass/listing?url=${encoded}` },
+  ]
+  let merged: Record<string, unknown> = {}
+  let hits = 0
+  const failures: string[] = []
+
+  for (const { host, path } of attempts) {
+    try {
+      const json = await rapidGet(host, path, apiKey)
+      const flat = flattenCompassPayload(json)
+      merged = mergeRecordFields(merged, flat)
+      hits += 1
+      await sleep(180)
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err))
+      failures.push(`${RAPIDAPI_PRODUCT[host] || host}: ${error.message}`)
+      if (/quota|exceeded|upgrade your plan/i.test(error.message) && !/rate limit/i.test(error.message)) {
+        throw error
+      }
+    }
+  }
+
+  merged = flattenCompassPayload({ success: true, data: merged })
+
+  if (!hits || !compassPayloadHasData(merged)) {
+    throw new Error(
+      `Compass import failed after trying property + listing endpoints. ` +
+        (failures.length ? failures.join(' | ') : 'No listing fields returned.'),
+    )
+  }
+
+  return merged
 }
 
 function unwrapZillowPayload(payload: Record<string, unknown>): Record<string, unknown> {
